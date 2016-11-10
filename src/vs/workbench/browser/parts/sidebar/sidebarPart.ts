@@ -4,35 +4,39 @@
  *--------------------------------------------------------------------------------------------*/
 
 import 'vs/css!./media/sidebarpart';
-import {TPromise} from 'vs/base/common/winjs.base';
+import { TPromise } from 'vs/base/common/winjs.base';
 import nls = require('vs/nls');
-import {Registry} from 'vs/platform/platform';
-import {Action} from 'vs/base/common/actions';
-import {IComposite} from 'vs/workbench/common/composite';
-import {CompositePart} from 'vs/workbench/browser/parts/compositePart';
-import {Viewlet, ViewletRegistry, Extensions as ViewletExtensions} from 'vs/workbench/browser/viewlet';
-import {IWorkbenchActionRegistry, Extensions as ActionExtensions} from 'vs/workbench/common/actionRegistry';
-import {SyncActionDescriptor} from 'vs/platform/actions/common/actions';
-import {IViewletService} from 'vs/workbench/services/viewlet/common/viewletService';
-import {IPartService} from 'vs/workbench/services/part/common/partService';
-import {IViewlet} from 'vs/workbench/common/viewlet';
-import {Scope} from 'vs/workbench/browser/actionBarRegistry';
-import {IStorageService} from 'vs/platform/storage/common/storage';
-import {IContextMenuService} from 'vs/platform/contextview/browser/contextView';
-import {IEventService} from 'vs/platform/event/common/event';
-import {IMessageService} from 'vs/platform/message/common/message';
-import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
-import {IKeybindingService} from 'vs/platform/keybinding/common/keybinding';
-import {KeyMod, KeyCode} from 'vs/base/common/keyCodes';
-import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
-import Event, {Emitter} from 'vs/base/common/event';
+import { Registry } from 'vs/platform/platform';
+import { Action } from 'vs/base/common/actions';
+import { CompositePart } from 'vs/workbench/browser/parts/compositePart';
+import { Viewlet, ViewletRegistry, Extensions as ViewletExtensions } from 'vs/workbench/browser/viewlet';
+import { IWorkbenchActionRegistry, Extensions as ActionExtensions } from 'vs/workbench/common/actionRegistry';
+import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
+import { IViewletService } from 'vs/workbench/services/viewlet/common/viewletService';
+import { IPartService } from 'vs/workbench/services/part/common/partService';
+import { IViewlet } from 'vs/workbench/common/viewlet';
+import { Scope } from 'vs/workbench/browser/actionBarRegistry';
+import { IStorageService } from 'vs/platform/storage/common/storage';
+import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
+import { IMessageService } from 'vs/platform/message/common/message';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
+import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import Event from 'vs/base/common/event';
 
-export class SidebarPart extends CompositePart<Viewlet> implements IViewletService {
+export interface ISidebar {
+	onDidViewletOpen: Event<IViewlet>;
+	onDidViewletClose: Event<IViewlet>;
+	openViewlet(id: string, focus?: boolean): TPromise<IViewlet>;
+	getActiveViewlet(): IViewlet;
+	getLastActiveViewletId(): string;
+	hideActiveViewlet(): TPromise<void>;
+}
+
+export class SidebarPart extends CompositePart<Viewlet> implements ISidebar {
 
 	public static activeViewletSettingsKey = 'workbench.sidebar.activeviewletid';
-
-	private _onDidActiveViewletChange = new Emitter<IViewlet>();
-	onDidActiveViewletChange: Event<IViewlet> = this._onDidActiveViewletChange.event;
 
 	public _serviceBrand: any;
 
@@ -42,7 +46,6 @@ export class SidebarPart extends CompositePart<Viewlet> implements IViewletServi
 		id: string,
 		@IMessageService messageService: IMessageService,
 		@IStorageService storageService: IStorageService,
-		@IEventService eventService: IEventService,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IPartService partService: IPartService,
@@ -52,7 +55,6 @@ export class SidebarPart extends CompositePart<Viewlet> implements IViewletServi
 		super(
 			messageService,
 			storageService,
-			eventService,
 			telemetryService,
 			contextMenuService,
 			partService,
@@ -65,6 +67,14 @@ export class SidebarPart extends CompositePart<Viewlet> implements IViewletServi
 			Scope.VIEWLET,
 			id
 		);
+	}
+
+	public get onDidViewletOpen(): Event<IViewlet> {
+		return this._onDidCompositeOpen.event;
+	}
+
+	public get onDidViewletClose(): Event<IViewlet> {
+		return this._onDidCompositeClose.event;
 	}
 
 	public openViewlet(id: string, focus?: boolean): TPromise<Viewlet> {
@@ -82,10 +92,7 @@ export class SidebarPart extends CompositePart<Viewlet> implements IViewletServi
 			}
 		}
 
-		return this.openComposite(id, focus).then(composite => {
-			this._onDidActiveViewletChange.fire(composite as IComposite as IViewlet);
-			return composite;
-		});
+		return this.openComposite(id, focus);
 	}
 
 	public getActiveViewlet(): IViewlet {
@@ -97,7 +104,7 @@ export class SidebarPart extends CompositePart<Viewlet> implements IViewletServi
 	}
 
 	public hideActiveViewlet(): TPromise<void> {
-		return this.hideActiveComposite();
+		return this.hideActiveComposite().then(composite => void 0);
 	}
 }
 

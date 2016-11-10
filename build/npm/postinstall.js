@@ -11,16 +11,22 @@ const extensions = [
 	'vscode-colorize-tests',
 	'json',
 	'configuration-editing',
+	'extension-editing',
 	'markdown',
 	'typescript',
 	'php',
 	'javascript',
-	'css'
+	'css',
+	'html'
 ];
 
 extensions.forEach(extension => {
-	cp.spawnSync(npm, ['install'], {
-		cwd: `extensions/${ extension }`,
+	const result = cp.spawnSync(npm, ['install'], {
+		cwd: `extensions/${extension}`,
 		stdio: 'inherit'
 	});
+
+	if (result.error || result.status !== 0) {
+		process.exit(1);
+	}
 });

@@ -14,6 +14,7 @@
 .monaco-workbench .panel.integrated-terminal .xterm {
 	background-color: transparent!important;
 	position: relative;
+	height: 100%;
 }
 
 .monaco-workbench .panel.integrated-terminal .xterm:focus {
@@ -38,15 +39,24 @@
 	 * Move textarea out of the screen to the far left, so that the cursor is not visible.
 	 */
 	left: -9999em;
+	top: -9999em;
 	opacity: 0;
 	width: 0;
 	height: 0;
 	z-index: -10;
 }
 
-.monaco-workbench .panel.integrated-terminal .reverse-video { color: #1e1e1e; }
-.vs-dark .monaco-workbench .panel.integrated-terminal .reverse-video { color: #CCC; }
-.hc-black .monaco-workbench .panel.integrated-terminal .reverse-video { color: #FFF; }
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-helper-textarea:focus {
+	/* Override the general vscode style applies `opacity:1!important` to textareas */
+	opacity: 0 !important;
+}
+
+.monaco-workbench .panel.integrated-terminal .xterm.focus .reverse-video,
+.monaco-workbench .panel.integrated-terminal .xterm:focus .reverse-video { color: #CCC; }
+.vs-dark .monaco-workbench .panel.integrated-terminal .xterm.focus .reverse-video,
+.vs-dark .monaco-workbench .panel.integrated-terminal .xterm:focus .reverse-video { color: #1e1e1e; }
+.hc-black .monaco-workbench .panel.integrated-terminal .xterm.focus .reverse-video,
+.hc-black .monaco-workbench .panel.integrated-terminal .xterm:focus .reverse-video { color: #000; }
 
 .monaco-workbench .panel.integrated-terminal .xterm.focus .terminal-cursor,
 .monaco-workbench .panel.integrated-terminal .xterm:focus .terminal-cursor { background-color: #333; }
@@ -111,6 +121,32 @@
 	}
 }
 
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-viewport {
+	overflow-y: scroll;
+}
+
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-rows {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+}
+
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-rows > div {
+	/* Lines containing spans and text nodes ocassionally wrap despite being the same width (#327) */
+	white-space: nowrap;
+}
+
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-scroll-area {
+	visibility: hidden;
+}
+
+.monaco-workbench .panel.integrated-terminal .xterm .xterm-char-measure-element {
+	display: inline-block;
+	visibility: hidden;
+	position: absolute;
+	left: -9999em;
+}
+
 .monaco-workbench .panel.integrated-terminal .xterm .xterm-bold {
 	font-weight: bold;
 }
@@ -135,6 +171,7 @@
 	display: none;
 	position: absolute;
 	white-space: nowrap;
+	z-index: 1;
 }
 
 .terminal .composition-view.active {

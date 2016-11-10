@@ -5,23 +5,26 @@
 'use strict';
 
 import * as nls from 'vs/nls';
-import * as arrays from 'vs/base/common/arrays';
-import {KeyCode, KeyMod} from 'vs/base/common/keyCodes';
-import {IDisposable, dispose} from 'vs/base/common/lifecycle';
-import {TPromise} from 'vs/base/common/winjs.base';
-import {EditorAction} from 'vs/editor/common/editorAction';
-import {Behaviour} from 'vs/editor/common/editorActionEnablement';
+import { isFalsyOrEmpty } from 'vs/base/common/arrays';
+import { KeyCode, KeyMod, KeyChord } from 'vs/base/common/keyCodes';
+import { IDisposable, dispose } from 'vs/base/common/lifecycle';
+import { TPromise } from 'vs/base/common/winjs.base';
 import * as editorCommon from 'vs/editor/common/editorCommon';
-import {KbExpr} from 'vs/platform/keybinding/common/keybinding';
-import {CommonEditorRegistry, ContextKey} from 'vs/editor/common/editorCommonExtensions';
-import {DocumentFormattingEditProviderRegistry, DocumentRangeFormattingEditProviderRegistry, OnTypeFormattingEditProviderRegistry} from 'vs/editor/common/modes';
-import {getOnTypeFormattingEdits, getDocumentFormattingEdits, getDocumentRangeFormattingEdits} from '../common/format';
-import {EditOperationsCommand} from './formatCommand';
-import {Selection} from 'vs/editor/common/core/selection';
+import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+import { editorAction, ServicesAccessor, EditorAction, commonEditorContribution } from 'vs/editor/common/editorCommonExtensions';
+import { OnTypeFormattingEditProviderRegistry } from 'vs/editor/common/modes';
+import { getOnTypeFormattingEdits, getDocumentFormattingEdits, getDocumentRangeFormattingEdits } from '../common/format';
+import { EditOperationsCommand } from './formatCommand';
+import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { ICodeEditorService } from 'vs/editor/common/services/codeEditorService';
 
+import ModeContextKeys = editorCommon.ModeContextKeys;
+import EditorContextKeys = editorCommon.EditorContextKeys;
+
+@commonEditorContribution
 class FormatOnType implements editorCommon.IEditorContribution {
 
-	public static ID = 'editor.contrib.autoFormat';
+	private static ID = 'editor.contrib.autoFormat';
 
 	private editor: editorCommon.ICommonCodeEditor;
 	private callOnDispose: IDisposable[];
@@ -112,13 +115,13 @@ class FormatOnType implements editorCommon.IEditorContribution {
 
 			unbind.dispose();
 
-			if (canceled || arrays.isFalsyOrEmpty(edits)) {
+			if (canceled || isFalsyOrEmpty(edits)) {
 				return;
 			}
 
 			this.editor.executeCommand(this.getId(), new EditOperationsCommand(edits, this.editor.getSelection()));
 
-		},(err) => {
+		}, (err) => {
 			unbind.dispose();
 			throw err;
 		});
@@ -134,106 +137,103 @@ class FormatOnType implements editorCommon.IEditorContribution {
 	}
 }
 
-export class FormatAction extends EditorAction {
+export abstract class AbstractFormatAction extends EditorAction {
 
-	public static ID = 'editor.action.format';
+	public run(accessor: ServicesAccessor, editor: editorCommon.ICommonCodeEditor): TPromise<void> {
 
-	private _disposables: IDisposable[];
-
-	constructor(descriptor:editorCommon.IEditorActionDescriptorData, editor:editorCommon.ICommonCodeEditor) {
-		super(descriptor, editor, Behaviour.WidgetFocus | Behaviour.Writeable | Behaviour.UpdateOnModelChange);
-		this._disposables = [
-			DocumentFormattingEditProviderRegistry.onDidChange(() => this.resetEnablementState()),
-			DocumentRangeFormattingEditProviderRegistry.onDidChange(() => this.resetEnablementState())
-		];
-	}
-
-	public dispose() {
-		super.dispose();
-		this._disposables = dispose(this._disposables);
-	}
-	public isSupported(): boolean {
-		return (
-			(
-				DocumentFormattingEditProviderRegistry.has(this.editor.getModel())
-				|| DocumentRangeFormattingEditProviderRegistry.has(this.editor.getModel())
-			)
-			&& super.isSupported()
-		);
-	}
-
-	public run(): TPromise<boolean> {
-
-		const model = this.editor.getModel(),
-			editorSelection = this.editor.getSelection(),
-			modelOpts = model.getOptions(),
-			options = {
-				tabSize: modelOpts.tabSize,
-				insertSpaces: modelOpts.insertSpaces,
-			};
-
-		let formattingPromise: TPromise<editorCommon.ISingleEditOperation[]>;
-
-		if (editorSelection.isEmpty()) {
-			formattingPromise = getDocumentFormattingEdits(model, options);
-		} else {
-			formattingPromise = getDocumentRangeFormattingEdits(model, editorSelection, options);
-		}
-
+		const formattingPromise = this._getFormattingEdits(editor);
 		if (!formattingPromise) {
-			return TPromise.as(false);
+			return TPromise.as(void 0);
 		}
 
 		// Capture the state of the editor
-		var state = this.editor.captureState(editorCommon.CodeEditorStateFlag.Value, editorCommon.CodeEditorStateFlag.Position);
+		const state = editor.captureState(editorCommon.CodeEditorStateFlag.Value, editorCommon.CodeEditorStateFlag.Position);
 
 		// Receive formatted value from worker
-		return formattingPromise.then((result: editorCommon.ISingleEditOperation[]) => {
+		return formattingPromise.then(edits => {
 
-			if (!state.validate(this.editor)) {
-				return false;
+			if (!state.validate(editor) || isFalsyOrEmpty(edits)) {
+				return;
 			}
 
-			if (!result || result.length === 0) {
-				return false;
-			}
-
-			this.apply(this.editor, editorSelection, result);
-			this.editor.focus();
-			return true;
+			const command = new EditOperationsCommand(edits, editor.getSelection());
+			editor.executeCommand(this.id, command);
+			editor.focus();
 		});
 	}
 
-	public apply(editor: editorCommon.ICommonCodeEditor, editorSelection: Selection, value: editorCommon.ISingleEditOperation[]): void {
-		var state: editorCommon.IEditorViewState = null;
+	protected abstract _getFormattingEdits(editor: editorCommon.ICommonCodeEditor): TPromise<editorCommon.ISingleEditOperation[]>;
+}
 
-		if (editorSelection.isEmpty()) {
-			state = editor.saveViewState();
-		}
-		var command = new EditOperationsCommand(value, editorSelection);
-		editor.executeCommand(this.id, command);
 
-		if (state) {
-			editor.restoreViewState(state);
-		}
+@editorAction
+export class FormatDocumentAction extends AbstractFormatAction {
+
+	constructor() {
+		super({
+			id: 'editor.action.formatDocument',
+			label: nls.localize('formatDocument.label', "Format Document"),
+			alias: 'Format Document',
+			precondition: ContextKeyExpr.and(EditorContextKeys.Writable, ModeContextKeys.hasDocumentFormattingProvider),
+			kbOpts: {
+				kbExpr: EditorContextKeys.TextFocus,
+				primary: KeyMod.Shift | KeyMod.Alt | KeyCode.KEY_F,
+				// secondary: [KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_D)],
+				linux: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KEY_I }
+			},
+			menuOpts: {
+				group: '1_modification',
+				order: 1.3
+			}
+		});
+	}
+
+	protected _getFormattingEdits(editor: editorCommon.ICommonCodeEditor): TPromise<editorCommon.ISingleEditOperation[]> {
+		const model = editor.getModel();
+		const { tabSize, insertSpaces} = model.getOptions();
+		return getDocumentFormattingEdits(model, { tabSize, insertSpaces });
 	}
 }
 
-// register action
-CommonEditorRegistry.registerEditorAction({
-	ctor: FormatAction,
-	id: FormatAction.ID,
-	label: nls.localize('formatAction.label', "Format Code"),
-	alias: 'Format Code',
-	kbOpts: {
-		context: ContextKey.EditorTextFocus,
-		primary: KeyMod.Shift | KeyMod.Alt | KeyCode.KEY_F,
-		linux: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KEY_I }
-	},
-	menuOpts: {
-		group: '1_modification',
-		order: 1.3,
-		kbExpr: KbExpr.has(editorCommon.ModeContextKeys.hasFormattingProvider)
+@editorAction
+export class FormatSelectionAction extends AbstractFormatAction {
+
+	constructor() {
+		super({
+			id: 'editor.action.formatSelection',
+			label: nls.localize('formatSelection.label', "Format Selection"),
+			alias: 'Format Code',
+			precondition: ContextKeyExpr.and(EditorContextKeys.Writable, ModeContextKeys.hasDocumentFormattingProvider, EditorContextKeys.HasNonEmptySelection),
+			kbOpts: {
+				kbExpr: EditorContextKeys.TextFocus,
+				primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_F)
+			},
+			menuOpts: {
+				group: '1_modification',
+				order: 1.31
+			}
+		});
+	}
+
+	protected _getFormattingEdits(editor: editorCommon.ICommonCodeEditor): TPromise<editorCommon.ISingleEditOperation[]> {
+		const model = editor.getModel();
+		const { tabSize, insertSpaces} = model.getOptions();
+		return getDocumentRangeFormattingEdits(model, editor.getSelection(), { tabSize, insertSpaces });
+	}
+}
+
+// this is the old format action that does both (format document OR format selection)
+// and we keep it here such that existing keybinding configurations etc will still work
+CommandsRegistry.registerCommand('editor.action.format', accessor => {
+	const editor = accessor.get(ICodeEditorService).getFocusedCodeEditor();
+	if (editor) {
+		const model = editor.getModel();
+		const editorSelection = editor.getSelection();
+		const {tabSize, insertSpaces } = model.getOptions();
+		if (editorSelection.isEmpty()) {
+			return getDocumentFormattingEdits(model, { tabSize, insertSpaces });
+		} else {
+			return getDocumentRangeFormattingEdits(model, editorSelection, { tabSize, insertSpaces });
+		}
 	}
 });
-CommonEditorRegistry.registerEditorContribution(FormatOnType);
