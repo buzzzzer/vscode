@@ -443,25 +443,6 @@ export class SnippetController {
 		}
 	}
 
-	private static _getTypeRangeForSelection(model: editorCommon.IModel, selection: Selection, overwriteBefore: number, overwriteAfter: number): Range {
-		var typeRange: Range;
-		if (overwriteBefore || overwriteAfter) {
-			typeRange = model.validateRange(Range.plusRange(selection, {
-				startLineNumber: selection.positionLineNumber,
-				startColumn: selection.positionColumn - overwriteBefore,
-				endLineNumber: selection.positionLineNumber,
-				endColumn: selection.positionColumn + overwriteAfter
-			}));
-		} else {
-			typeRange = selection;
-		}
-		return typeRange;
-	}
-
-	private static _getAdaptedSnippet(model: editorCommon.IModel, snippet: CodeSnippet, typeRange: Range): ICodeSnippet {
-		return snippet.bind(model.getLineContent(typeRange.startLineNumber), typeRange.startLineNumber - 1, typeRange.startColumn - 1, model);
-	}
-
 	private static _addCommandForSnippet(model: editorCommon.ITextModel, adaptedSnippet: ICodeSnippet, typeRange: Range, out: editorCommon.IIdentifiedSingleEditOperation[]): void {
 		let insertText = adaptedSnippet.lines.join('\n');
 		let currentText = model.getValueInRange(typeRange, editorCommon.EndOfLinePreference.LF);
@@ -494,8 +475,10 @@ export class SnippetController {
 			this._inSnippetMode.set(true);
 			this._currentController = new InsertSnippetController(this._editor, prepared.adaptedSnippet, prepared.typeRange.startLineNumber, initialAlternativeVersionId, () => {
 				this._inSnippetMode.reset();
-				this._currentController.dispose();
-				this._currentController = null;
+				if (this._currentController) {
+					this._currentController.dispose();
+					this._currentController = null;
+				}
 			});
 		}
 	}
@@ -599,6 +582,25 @@ export class SnippetController {
 			typeRange: typeRange,
 			adaptedSnippet: adaptedSnippet
 		};
+	}
+
+	private static _getTypeRangeForSelection(model: editorCommon.IModel, selection: Selection, overwriteBefore: number, overwriteAfter: number): Range {
+		var typeRange: Range;
+		if (overwriteBefore || overwriteAfter) {
+			typeRange = model.validateRange(Range.plusRange(selection, {
+				startLineNumber: selection.positionLineNumber,
+				startColumn: selection.positionColumn - overwriteBefore,
+				endLineNumber: selection.positionLineNumber,
+				endColumn: selection.positionColumn + overwriteAfter
+			}));
+		} else {
+			typeRange = selection;
+		}
+		return typeRange;
+	}
+
+	private static _getAdaptedSnippet(model: editorCommon.IModel, snippet: CodeSnippet, typeRange: Range): ICodeSnippet {
+		return snippet.bind(model.getLineContent(typeRange.startLineNumber), typeRange.startLineNumber - 1, typeRange.startColumn - 1, model);
 	}
 
 	private static _getSnippetCursorOnly(snippet: ICodeSnippet): editorCommon.IPosition {

@@ -6,21 +6,20 @@
 'use strict';
 
 import 'vs/css!./media/binarydiffeditor';
-import Event, {Emitter} from 'vs/base/common/event';
-import {TPromise} from 'vs/base/common/winjs.base';
+import Event, { Emitter } from 'vs/base/common/event';
+import { TPromise } from 'vs/base/common/winjs.base';
 import nls = require('vs/nls');
 import URI from 'vs/base/common/uri';
-import {Sash, ISashEvent, IVerticalSashLayoutProvider} from 'vs/base/browser/ui/sash/sash';
-import {Dimension, Builder, $} from 'vs/base/browser/builder';
-import {ResourceViewer} from 'vs/base/browser/ui/resourceviewer/resourceViewer';
-import {DomScrollableElement} from 'vs/base/browser/ui/scrollbar/scrollableElement';
-import {BaseEditor} from 'vs/workbench/browser/parts/editor/baseEditor';
-import {EditorInput, EditorOptions, BINARY_DIFF_EDITOR_ID} from 'vs/workbench/common/editor';
-import {BinaryEditorModel} from 'vs/workbench/common/editor/binaryEditorModel';
-import {DiffEditorModel} from 'vs/workbench/common/editor/diffEditorModel';
-import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
-import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
-import {ScrollbarVisibility} from 'vs/base/common/scrollable';
+import { Sash, ISashEvent, IVerticalSashLayoutProvider } from 'vs/base/browser/ui/sash/sash';
+import { Dimension, Builder, $ } from 'vs/base/browser/builder';
+import { ResourceViewer } from 'vs/base/browser/ui/resourceviewer/resourceViewer';
+import { DomScrollableElement } from 'vs/base/browser/ui/scrollbar/scrollableElement';
+import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
+import { EditorInput, EditorOptions, BINARY_DIFF_EDITOR_ID } from 'vs/workbench/common/editor';
+import { BinaryEditorModel } from 'vs/workbench/common/editor/binaryEditorModel';
+import { DiffEditorModel } from 'vs/workbench/common/editor/diffEditorModel';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 
 /**
  * An implementation of editor for diffing binary files like images or videos.
@@ -45,8 +44,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 	private startLeftContainerWidth: number;
 
 	constructor(
-		@ITelemetryService telemetryService: ITelemetryService,
-		@IWorkbenchEditorService private editorService: IWorkbenchEditorService
+		@ITelemetryService telemetryService: ITelemetryService
 	) {
 		super(BinaryResourceDiffEditor.ID, telemetryService);
 
@@ -106,7 +104,7 @@ export class BinaryResourceDiffEditor extends BaseEditor implements IVerticalSas
 		}
 
 		// Different Input (Reload)
-		return this.editorService.resolveEditorModel(input, true /* Reload */).then((resolvedModel: DiffEditorModel) => {
+		return input.resolve(true).then((resolvedModel: DiffEditorModel) => {
 
 			// Assert model instance
 			if (!(resolvedModel.originalModel instanceof BinaryEditorModel) || !(resolvedModel.modifiedModel instanceof BinaryEditorModel)) {

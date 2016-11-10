@@ -6,12 +6,13 @@
 import assert = require('assert');
 import uri from 'vs/base/common/uri';
 import platform = require('vs/base/common/platform');
-import {TPromise} from 'vs/base/common/winjs.base';
-import {IConfigurationService, getConfigurationValue} from 'vs/platform/configuration/common/configuration';
-import {ICommandService} from 'vs/platform/commands/common/commands';
-import {IConfigurationResolverService} from 'vs/workbench/services/configurationResolver/common/configurationResolver';
-import {ConfigurationResolverService} from 'vs/workbench/services/configurationResolver/node/configurationResolverService';
-import {TestEnvironmentService, TestConfigurationService, TestEditorService, } from 'vs/test/utils/servicesTestUtils';
+import { TPromise } from 'vs/base/common/winjs.base';
+import { IConfigurationService, getConfigurationValue } from 'vs/platform/configuration/common/configuration';
+import { ICommandService } from 'vs/platform/commands/common/commands';
+import { IConfigurationResolverService } from 'vs/workbench/services/configurationResolver/common/configurationResolver';
+import { ConfigurationResolverService } from 'vs/workbench/services/configurationResolver/node/configurationResolverService';
+import { TestEnvironmentService, TestEditorService, } from 'vs/test/utils/servicesTestUtils';
+import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
 
 suite('Configuration Resolver Service', () => {
 	let configurationResolverService: IConfigurationResolverService;
@@ -334,6 +335,7 @@ class MockConfigurationService implements IConfigurationService {
 	public constructor(private configuration: any = {}) { }
 	public reloadConfiguration<T>(section?: string): TPromise<T> { return TPromise.as(this.getConfiguration()); }
 	public lookup(key: string) { return { value: getConfigurationValue(this.getConfiguration(), key), default: getConfigurationValue(this.getConfiguration(), key), user: getConfigurationValue(this.getConfiguration(), key) }; }
+	public keys() { return { default: [], user: [] }; }
 	public getConfiguration(): any { return this.configuration; }
 	public onDidUpdateConfiguration() { return { dispose() { } }; }
 }

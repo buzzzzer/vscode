@@ -7,24 +7,24 @@
 
 import 'vs/css!./media/activitybarpart';
 import nls = require('vs/nls');
-import {TPromise} from 'vs/base/common/winjs.base';
-import {Builder, $} from 'vs/base/browser/builder';
-import {Action} from 'vs/base/common/actions';
+import { TPromise } from 'vs/base/common/winjs.base';
+import { Builder, $ } from 'vs/base/browser/builder';
+import { Action } from 'vs/base/common/actions';
 import errors = require('vs/base/common/errors');
-import {ActionsOrientation, ActionBar, IActionItem} from 'vs/base/browser/ui/actionbar/actionbar';
-import {Registry} from 'vs/platform/platform';
-import {IComposite} from 'vs/workbench/common/composite';
-import {ViewletDescriptor, ViewletRegistry, Extensions as ViewletExtensions} from 'vs/workbench/browser/viewlet';
-import {Part} from 'vs/workbench/browser/part';
-import {ActivityAction, ActivityActionItem} from 'vs/workbench/browser/parts/activitybar/activityAction';
-import {IViewletService} from 'vs/workbench/services/viewlet/common/viewletService';
-import {IActivityService, IBadge} from 'vs/workbench/services/activity/common/activityService';
-import {IPartService} from 'vs/workbench/services/part/common/partService';
-import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
-import {IKeybindingService} from 'vs/platform/keybinding/common/keybinding';
+import { ActionsOrientation, ActionBar, IActionItem } from 'vs/base/browser/ui/actionbar/actionbar';
+import { IComposite } from 'vs/workbench/common/composite';
+import { ViewletDescriptor } from 'vs/workbench/browser/viewlet';
+import { Part } from 'vs/workbench/browser/part';
+import { ActivityAction, ActivityActionItem } from 'vs/workbench/browser/parts/activitybar/activityAction';
+import { IViewletService } from 'vs/workbench/services/viewlet/common/viewletService';
+import { IActivityService, IBadge } from 'vs/workbench/services/activity/common/activityService';
+import { IPartService } from 'vs/workbench/services/part/common/partService';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 
 export class ActivitybarPart extends Part implements IActivityService {
 	public _serviceBrand: any;
+
 	private viewletSwitcherBar: ActionBar;
 	private activityActionItems: { [actionId: string]: IActionItem; };
 	private compositeIdToActions: { [compositeId: string]: ActivityAction; };
@@ -51,6 +51,12 @@ export class ActivitybarPart extends Part implements IActivityService {
 
 		// Deactivate viewlet action on close
 		this.toUnbind.push(this.viewletService.onDidViewletClose(viewlet => this.onCompositeClosed(viewlet)));
+
+		// Update viewlet switcher when external viewlets become ready
+		this.toUnbind.push(this.viewletService.onDidExtViewletsLoad(() => this.refreshViewletSwitcher()));
+
+		// Update viewlet switcher on toggling of a viewlet
+		this.toUnbind.push(this.viewletService.onDidViewletToggle(() => this.refreshViewletSwitcher()));
 	}
 
 	private onActiveCompositeChanged(composite: IComposite): void {
@@ -90,33 +96,52 @@ export class ActivitybarPart extends Part implements IActivityService {
 	}
 
 	private createViewletSwitcher(div: Builder): void {
-
-		// Composite switcher is on top
 		this.viewletSwitcherBar = new ActionBar(div, {
 			actionItemProvider: (action: Action) => this.activityActionItems[action.id],
 			orientation: ActionsOrientation.VERTICAL,
 			ariaLabel: nls.localize('activityBarAriaLabel', "Active View Switcher")
 		});
-		this.viewletSwitcherBar.getContainer().addClass('position-top');
 
-		// Build Viewlet Actions in correct order
-		const allViewlets = (<ViewletRegistry>Registry.as(ViewletExtensions.Viewlets)).getViewlets();
-		const viewletActions = allViewlets.sort((v1, v2) => v1.order - v2.order).map(viewlet => this.toAction(viewlet));
+		this.fillViewletSwitcher(this.viewletService.getAllViewletsToDisplay());
+	}
 
-		this.viewletSwitcherBar.push(viewletActions, { label: true, icon: true });
+	private refreshViewletSwitcher(): void {
+		this.fillViewletSwitcher(this.viewletService.getAllViewletsToDisplay());
+	}
+
+	private fillViewletSwitcher(viewlets: ViewletDescriptor[]) {
+		// Pull out viewlets no longer needed
+		const newViewletIds = viewlets.map(v => v.id);
+		const existingViewletIds = Object.keys(this.compositeIdToActions);
+		existingViewletIds.forEach(viewletId => {
+			if (newViewletIds.indexOf(viewletId) === -1) {
+				this.pullViewlet(viewletId);
+			}
+		});
+
+		const actionsToPush = viewlets
+			.filter(viewlet => !this.compositeIdToActions[viewlet.id])
+			.map(viewlet => this.toAction(viewlet));
+
+		this.viewletSwitcherBar.push(actionsToPush, { label: true, icon: true });
+	}
+
+	private pullViewlet(viewletId: string): void {
+		const index = Object.keys(this.compositeIdToActions).indexOf(viewletId);
+		const action = this.compositeIdToActions[viewletId];
+		const actionItem = this.activityActionItems[action.id];
+		delete this.compositeIdToActions[viewletId];
+		delete this.activityActionItems[action.id];
+		action.dispose();
+		actionItem.dispose();
+		this.viewletSwitcherBar.pull(index);
 	}
 
 	private toAction(composite: ViewletDescriptor): ActivityAction {
-		const activeViewlet = this.viewletService.getActiveViewlet();
 		const action = this.instantiationService.createInstance(ViewletActivityAction, composite.id + '.activity-bar-action', composite);
 
 		this.activityActionItems[action.id] = new ActivityActionItem(action, composite.name, this.getKeybindingLabel(composite.id));
 		this.compositeIdToActions[composite.id] = action;
-
-		// Mark active viewlet as active
-		if (activeViewlet && activeViewlet.getId() === composite.id) {
-			action.activate();
-		}
 
 		return action;
 	};
@@ -145,7 +170,8 @@ class ViewletActivityAction extends ActivityAction {
 	private lastRun: number = 0;
 
 	constructor(
-		id: string, private viewlet: ViewletDescriptor,
+		id: string,
+		private viewlet: ViewletDescriptor,
 		@IViewletService private viewletService: IViewletService,
 		@IPartService private partService: IPartService
 	) {

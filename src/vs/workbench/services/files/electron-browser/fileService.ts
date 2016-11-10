@@ -5,29 +5,29 @@
 'use strict';
 
 import nls = require('vs/nls');
-import {TPromise} from 'vs/base/common/winjs.base';
-import {IDisposable, dispose} from 'vs/base/common/lifecycle';
+import { TPromise } from 'vs/base/common/winjs.base';
+import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import paths = require('vs/base/common/paths');
 import encoding = require('vs/base/node/encoding');
 import errors = require('vs/base/common/errors');
 import strings = require('vs/base/common/strings');
 import uri from 'vs/base/common/uri';
 import timer = require('vs/base/common/timer');
-import {asFileEditorInput} from 'vs/workbench/common/editor';
-import {IFileService, IFilesConfiguration, IResolveFileOptions, IFileStat, IContent, IStreamContent, IImportResult, IResolveContentOptions, IUpdateContentOptions} from 'vs/platform/files/common/files';
-import {FileService as NodeFileService, IFileServiceOptions, IEncodingOverride} from 'vs/workbench/services/files/node/fileService';
-import {IConfigurationService} from 'vs/platform/configuration/common/configuration';
-import {IEventService} from 'vs/platform/event/common/event';
-import {IWorkspaceContextService} from 'vs/platform/workspace/common/workspace';
-import {Action} from 'vs/base/common/actions';
-import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
-import {IMessageService, IMessageWithAction, Severity, CloseAction} from 'vs/platform/message/common/message';
-import {IEnvironmentService} from 'vs/platform/environment/common/environment';
-import {IEditorGroupService} from 'vs/workbench/services/group/common/groupService';
-import {ILifecycleService} from 'vs/platform/lifecycle/common/lifecycle';
-import {IStorageService, StorageScope} from 'vs/platform/storage/common/storage';
+import { asFileEditorInput } from 'vs/workbench/common/editor';
+import { IFileService, IFilesConfiguration, IResolveFileOptions, IFileStat, IContent, IStreamContent, IImportResult, IResolveContentOptions, IUpdateContentOptions } from 'vs/platform/files/common/files';
+import { FileService as NodeFileService, IFileServiceOptions, IEncodingOverride } from 'vs/workbench/services/files/node/fileService';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IEventService } from 'vs/platform/event/common/event';
+import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { Action } from 'vs/base/common/actions';
+import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { IMessageService, IMessageWithAction, Severity, CloseAction } from 'vs/platform/message/common/message';
+import { IEnvironmentService } from 'vs/platform/environment/common/environment';
+import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
+import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
+import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 
-import {shell} from 'electron';
+import { shell } from 'electron';
 
 export class FileService implements IFileService {
 
@@ -87,16 +87,16 @@ export class FileService implements IFileService {
 		this.registerListeners();
 	}
 
-	private onFileServiceError(msg: string): void {
+	private onFileServiceError(msg: any): void {
 		errors.onUnexpectedError(msg);
 
 		// Detect if we run < .NET Framework 4.5
-		if (msg && msg.indexOf(FileService.NET_VERSION_ERROR) >= 0 && !this.storageService.getBoolean(FileService.NET_VERSION_ERROR_IGNORE_KEY, StorageScope.WORKSPACE)) {
+		if (typeof msg === 'string' && msg.indexOf(FileService.NET_VERSION_ERROR) >= 0 && !this.storageService.getBoolean(FileService.NET_VERSION_ERROR_IGNORE_KEY, StorageScope.WORKSPACE)) {
 			this.messageService.show(Severity.Warning, <IMessageWithAction>{
 				message: nls.localize('netVersionError', "The Microsoft .NET Framework 4.5 is required. Please follow the link to install it."),
 				actions: [
 					new Action('install.net', nls.localize('installNet', "Download .NET Framework 4.5"), null, true, () => {
-						shell.openExternal('https://go.microsoft.com/fwlink/?LinkId=786533');
+						window.open('https://go.microsoft.com/fwlink/?LinkId=786533');
 
 						return TPromise.as(true);
 					}),

@@ -4,28 +4,26 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import {TPromise} from 'vs/base/common/winjs.base';
+import { TPromise } from 'vs/base/common/winjs.base';
 import URI from 'vs/base/common/uri';
 import paths = require('vs/base/common/paths');
 import DOM = require('vs/base/browser/dom');
 import errors = require('vs/base/common/errors');
 import objects = require('vs/base/common/objects');
-import Event, {Emitter} from 'vs/base/common/event';
-import {IResult, ITextFileOperationResult, ITextFileService, IRawTextContent, IAutoSaveConfiguration, AutoSaveMode, SaveReason, ITextFileEditorModelManager, ITextFileEditorModel, ISaveOptions} from 'vs/workbench/services/textfile/common/textfiles';
-import {ConfirmResult} from 'vs/workbench/common/editor';
-import {ILifecycleService} from 'vs/platform/lifecycle/common/lifecycle';
-import {IWorkspaceContextService} from 'vs/platform/workspace/common/workspace';
-import {IFileService, IResolveContentOptions, IFilesConfiguration, IFileOperationResult, FileOperationResult, AutoSaveConfiguration} from 'vs/platform/files/common/files';
-import {IConfigurationService} from 'vs/platform/configuration/common/configuration';
-import {ITelemetryService} from 'vs/platform/telemetry/common/telemetry';
-import {IDisposable, dispose} from 'vs/base/common/lifecycle';
-import {IWorkbenchEditorService} from 'vs/workbench/services/editor/common/editorService';
-import {IEditorGroupService} from 'vs/workbench/services/group/common/groupService';
-import {IUntitledEditorService} from 'vs/workbench/services/untitled/common/untitledEditorService';
-import {UntitledEditorModel} from 'vs/workbench/common/editor/untitledEditorModel';
-import {BinaryEditorModel} from 'vs/workbench/common/editor/binaryEditorModel';
-import {TextFileEditorModelManager} from 'vs/workbench/services/textfile/common/textFileEditorModelManager';
-import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
+import Event, { Emitter } from 'vs/base/common/event';
+import { IResult, ITextFileOperationResult, ITextFileService, IRawTextContent, IAutoSaveConfiguration, AutoSaveMode, SaveReason, ITextFileEditorModelManager, ITextFileEditorModel, ISaveOptions } from 'vs/workbench/services/textfile/common/textfiles';
+import { ConfirmResult } from 'vs/workbench/common/editor';
+import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
+import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { IFileService, IResolveContentOptions, IFilesConfiguration, IFileOperationResult, FileOperationResult, AutoSaveConfiguration } from 'vs/platform/files/common/files';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { IDisposable, dispose } from 'vs/base/common/lifecycle';
+import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
+import { IUntitledEditorService } from 'vs/workbench/services/untitled/common/untitledEditorService';
+import { UntitledEditorModel } from 'vs/workbench/common/editor/untitledEditorModel';
+import { TextFileEditorModelManager } from 'vs/workbench/services/textfile/common/textFileEditorModelManager';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 
 /**
  * The workbench file service implementation implements the raw file service spec and adds additional methods on top.
@@ -53,7 +51,6 @@ export abstract class TextFileService implements ITextFileService {
 		@IConfigurationService private configurationService: IConfigurationService,
 		@ITelemetryService private telemetryService: ITelemetryService,
 		@IEditorGroupService private editorGroupService: IEditorGroupService,
-		@IWorkbenchEditorService private editorService: IWorkbenchEditorService,
 		@IFileService protected fileService: IFileService,
 		@IUntitledEditorService private untitledEditorService: IUntitledEditorService,
 		@IInstantiationService private instantiationService: IInstantiationService
@@ -248,7 +245,7 @@ export abstract class TextFileService implements ITextFileService {
 
 		// touch resource if options tell so and file is not dirty
 		if (options && options.force && resource.scheme === 'file' && !this.isDirty(resource)) {
-			return this.fileService.touchFile(resource).then(() => true);
+			return this.fileService.touchFile(resource).then(() => true, () => true /* gracefully ignore errors if just touching */);
 		}
 
 		return this.saveAll([resource]).then(result => result.results.length === 1 && result.results[0].success);
@@ -441,21 +438,27 @@ export abstract class TextFileService implements ITextFileService {
 	}
 
 	private doSaveTextFileAs(sourceModel: ITextFileEditorModel | UntitledEditorModel, resource: URI, target: URI): TPromise<void> {
+
 		// create the target file empty if it does not exist already
 		return this.fileService.resolveFile(target).then(stat => stat, () => null).then(stat => stat || this.fileService.createFile(target)).then(stat => {
-			// resolve a model for the file (which can be binary if the file is not a text file)
-			return this.editorService.resolveEditorModel({ resource: target }).then((targetModel: ITextFileEditorModel) => {
-				// binary model: delete the file and run the operation again
-				if (targetModel instanceof BinaryEditorModel) {
-					return this.fileService.del(target).then(() => this.doSaveTextFileAs(sourceModel, resource, target));
-				}
 
-				// text model: take over encoding and model value from source model
+			// resolve a model for the file (which can be binary if the file is not a text file)
+			return this.models.loadOrCreate(target).then((targetModel: ITextFileEditorModel) => {
+
+				// take over encoding and model value from source model
 				targetModel.updatePreferredEncoding(sourceModel.getEncoding());
 				targetModel.textEditorModel.setValue(sourceModel.getValue());
 
 				// save model
 				return targetModel.save();
+			}, error => {
+
+				// binary model: delete the file and run the operation again
+				if ((<IFileOperationResult>error).fileOperationResult === FileOperationResult.FILE_IS_BINARY || (<IFileOperationResult>error).fileOperationResult === FileOperationResult.FILE_TOO_LARGE) {
+					return this.fileService.del(target).then(() => this.doSaveTextFileAs(sourceModel, resource, target));
+				}
+
+				return TPromise.wrapError(error);
 			});
 		});
 	}

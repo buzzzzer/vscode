@@ -10,18 +10,34 @@ import * as platform from 'vs/base/common/platform';
 import * as arrays from 'vs/base/common/arrays';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
 import { ipcMain as ipc, app, shell, dialog, Menu, MenuItem } from 'electron';
-import { IWindowsService } from 'vs/code/electron-main/windows';
-import { IPath, VSCodeWindow } from 'vs/code/electron-main/window';
+import { IWindowsMainService } from 'vs/code/electron-main/windows';
+import { VSCodeWindow } from 'vs/code/electron-main/window';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { IStorageService } from 'vs/code/electron-main/storage';
 import { IFilesConfiguration, AutoSaveConfiguration } from 'vs/platform/files/common/files';
-import { IUpdateService, State as UpdateState } from 'vs/code/electron-main/update-manager';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { IUpdateService, State as UpdateState } from 'vs/platform/update/common/update';
 import { Keybinding } from 'vs/base/common/keybinding';
 import product from 'vs/platform/product';
+import { RunOnceScheduler } from 'vs/base/common/async';
 
 interface IResolvedKeybinding {
 	id: string;
 	binding: number;
+}
+
+interface IConfiguration extends IFilesConfiguration {
+	workbench: {
+		sideBar: {
+			location: 'left' | 'right';
+		},
+		statusBar: {
+			visible: boolean;
+		},
+		activityBar: {
+			visible: boolean;
+		}
+	};
 }
 
 export class VSCodeMenu {
@@ -31,9 +47,14 @@ export class VSCodeMenu {
 	private static MAX_MENU_RECENT_ENTRIES = 10;
 
 	private currentAutoSaveSetting: string;
+	private currentSidebarLocation: 'left' | 'right';
+	private currentStatusbarVisible: boolean;
+	private currentActivityBarVisible: boolean;
 
 	private isQuitting: boolean;
 	private appMenuInstalled: boolean;
+
+	private menuUpdater: RunOnceScheduler;
 
 	private actionIdKeybindingRequests: string[];
 	private mapLastKnownKeybindingToActionId: { [id: string]: string; };
@@ -44,16 +65,18 @@ export class VSCodeMenu {
 		@IStorageService private storageService: IStorageService,
 		@IUpdateService private updateService: IUpdateService,
 		@IConfigurationService private configurationService: IConfigurationService,
-		@IWindowsService private windowsService: IWindowsService,
-		@IEnvironmentService private environmentService: IEnvironmentService
+		@IWindowsMainService private windowsService: IWindowsMainService,
+		@IEnvironmentService private environmentService: IEnvironmentService,
+		@ITelemetryService private telemetryService: ITelemetryService
 	) {
 		this.actionIdKeybindingRequests = [];
 
 		this.mapResolvedKeybindingToActionId = Object.create(null);
 		this.mapLastKnownKeybindingToActionId = this.storageService.getItem<{ [id: string]: string; }>(VSCodeMenu.lastKnownKeybindingsMapStorageKey) || Object.create(null);
 
-		const config = configurationService.getConfiguration<IFilesConfiguration>();
-		this.currentAutoSaveSetting = config && config.files && config.files.autoSave;
+		this.menuUpdater = new RunOnceScheduler(() => this.doUpdateMenu(), 0);
+
+		this.onConfigurationUpdated(this.configurationService.getConfiguration<IConfiguration>());
 	}
 
 	public ready(): void {
@@ -68,12 +91,12 @@ export class VSCodeMenu {
 			this.isQuitting = true;
 		});
 
-		// Listen to "open" & "close" event from window service
-		this.windowsService.onOpen(paths => this.onOpen(paths));
-		this.windowsService.onClose(_ => this.onClose(this.windowsService.getWindowCount()));
+		// Listen to some events from window service
+		this.windowsService.onRecentPathsChange(paths => this.updateMenu());
+		this.windowsService.onWindowClose(_ => this.onClose(this.windowsService.getWindowCount()));
 
 		// Resolve keybindings when any first workbench is loaded
-		this.windowsService.onReady(win => this.resolveKeybindings(win));
+		this.windowsService.onWindowReady(win => this.resolveKeybindings(win));
 
 		// Listen to resolved keybindings
 		ipc.on('vscode:keybindingsResolved', (event, rawKeybindings) => {
@@ -110,16 +133,45 @@ export class VSCodeMenu {
 		});
 
 		// Update when auto save config changes
-		this.configurationService.onDidUpdateConfiguration(e => this.onConfigurationUpdated(e.config));
+		this.configurationService.onDidUpdateConfiguration(e => this.onConfigurationUpdated(e.config, true /* update menu if changed */));
 
 		// Listen to update service
-		this.updateService.on('change', () => this.updateMenu());
+		this.updateService.onStateChange(() => this.updateMenu());
 	}
 
-	private onConfigurationUpdated(config: IFilesConfiguration): void {
+	private onConfigurationUpdated(config: IConfiguration, handleMenu?: boolean): void {
+		let updateMenu = false;
 		const newAutoSaveSetting = config && config.files && config.files.autoSave;
 		if (newAutoSaveSetting !== this.currentAutoSaveSetting) {
 			this.currentAutoSaveSetting = newAutoSaveSetting;
+			updateMenu = true;
+		}
+
+		const newSidebarLocation = config && config.workbench && config.workbench.sideBar && config.workbench.sideBar.location || 'left';
+		if (newSidebarLocation !== this.currentSidebarLocation) {
+			this.currentSidebarLocation = newSidebarLocation;
+			updateMenu = true;
+		}
+
+		let newStatusbarVisible = config && config.workbench && config.workbench.statusBar && config.workbench.statusBar.visible;
+		if (typeof newStatusbarVisible !== 'boolean') {
+			newStatusbarVisible = true;
+		}
+		if (newStatusbarVisible !== this.currentStatusbarVisible) {
+			this.currentStatusbarVisible = newStatusbarVisible;
+			updateMenu = true;
+		}
+
+		let newActivityBarVisible = config && config.workbench && config.workbench.activityBar && config.workbench.activityBar.visible;
+		if (typeof newActivityBarVisible !== 'boolean') {
+			newActivityBarVisible = true;
+		}
+		if (newActivityBarVisible !== this.currentActivityBarVisible) {
+			this.currentActivityBarVisible = newActivityBarVisible;
+			updateMenu = true;
+		}
+
+		if (handleMenu && updateMenu) {
 			this.updateMenu();
 		}
 	}
@@ -138,6 +190,10 @@ export class VSCodeMenu {
 	}
 
 	private updateMenu(): void {
+		this.menuUpdater.schedule(); // buffer multiple attempts to update the menu
+	}
+
+	private doUpdateMenu(): void {
 
 		// Due to limitations in Electron, it is not possible to update menu items dynamically. The suggested
 		// workaround from Electron is to set the application menu again.
@@ -151,10 +207,6 @@ export class VSCodeMenu {
 				}
 			}, 10 /* delay this because there is an issue with updating a menu when it is open */);
 		}
-	}
-
-	private onOpen(path: IPath): void {
-		this.updateMenu();
 	}
 
 	private onClose(remainingWindowCount: number): void {
@@ -397,7 +449,7 @@ export class VSCodeMenu {
 
 		if (folders.length || files.length) {
 			openRecentMenu.append(__separator__());
-			openRecentMenu.append(new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miClearItems', comment: ['&& denotes a mnemonic'] }, "&&Clear Items")), click: () => { this.windowsService.clearRecentPathsList(); this.updateMenu(); } }));
+			openRecentMenu.append(new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miClearItems', comment: ['&& denotes a mnemonic'] }, "&&Clear Items")), click: () => this.windowsService.clearRecentPathsList() }));
 		}
 	}
 
@@ -408,7 +460,6 @@ export class VSCodeMenu {
 				const success = !!this.windowsService.open({ cli: this.environmentService.args, pathsToOpen: [path], forceNewWindow: openInNewWindow });
 				if (!success) {
 					this.windowsService.removeFromRecentPathsList(path);
-					this.updateMenu();
 				}
 			}
 		});
@@ -487,15 +538,39 @@ export class VSCodeMenu {
 		const fullscreen = new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miToggleFullScreen', comment: ['&& denotes a mnemonic'] }, "Toggle &&Full Screen")), accelerator: this.getAccelerator('workbench.action.toggleFullScreen'), click: () => this.windowsService.getLastActiveWindow().toggleFullScreen(), enabled: this.windowsService.getWindowCount() > 0 });
 		const toggleMenuBar = this.createMenuItem(nls.localize({ key: 'miToggleMenuBar', comment: ['&& denotes a mnemonic'] }, "Toggle Menu &&Bar"), 'workbench.action.toggleMenuBar');
 		const splitEditor = this.createMenuItem(nls.localize({ key: 'miSplitEditor', comment: ['&& denotes a mnemonic'] }, "Split &&Editor"), 'workbench.action.splitEditor');
+		const toggleEditorLayout = this.createMenuItem(nls.localize({ key: 'miToggleEditorLayout', comment: ['&& denotes a mnemonic'] }, "Toggle Editor Group &&Layout"), 'workbench.action.toggleEditorGroupLayout');
 		const toggleSidebar = this.createMenuItem(nls.localize({ key: 'miToggleSidebar', comment: ['&& denotes a mnemonic'] }, "&&Toggle Side Bar"), 'workbench.action.toggleSidebarVisibility');
-		const moveSidebar = this.createMenuItem(nls.localize({ key: 'miMoveSidebar', comment: ['&& denotes a mnemonic'] }, "&&Move Side Bar"), 'workbench.action.toggleSidebarPosition');
+
+		let moveSideBarLabel: string;
+		if (this.currentSidebarLocation !== 'right') {
+			moveSideBarLabel = nls.localize({ key: 'miMoveSidebarRight', comment: ['&& denotes a mnemonic'] }, "&&Move Side Bar Right");
+		} else {
+			moveSideBarLabel = nls.localize({ key: 'miMoveSidebarLeft', comment: ['&& denotes a mnemonic'] }, "&&Move Side Bar Left");
+		}
+
+		const moveSidebar = this.createMenuItem(moveSideBarLabel, 'workbench.action.toggleSidebarPosition');
+
 		const togglePanel = this.createMenuItem(nls.localize({ key: 'miTogglePanel', comment: ['&& denotes a mnemonic'] }, "Toggle &&Panel"), 'workbench.action.togglePanel');
-		const toggleStatusbar = this.createMenuItem(nls.localize({ key: 'miToggleStatusbar', comment: ['&& denotes a mnemonic'] }, "&&Toggle Status Bar"), 'workbench.action.toggleStatusbarVisibility');
+
+		let statusBarLabel: string;
+		if (this.currentStatusbarVisible) {
+			statusBarLabel = nls.localize({ key: 'miHideStatusbar', comment: ['&& denotes a mnemonic'] }, "&&Hide Status Bar");
+		} else {
+			statusBarLabel = nls.localize({ key: 'miShowStatusbar', comment: ['&& denotes a mnemonic'] }, "&&Show Status Bar");
+		}
+		const toggleStatusbar = this.createMenuItem(statusBarLabel, 'workbench.action.toggleStatusbarVisibility');
+
+		let activityBarLabel: string;
+		if (this.currentActivityBarVisible) {
+			activityBarLabel = nls.localize({ key: 'miHideActivityBar', comment: ['&& denotes a mnemonic'] }, "Hide &&Activity Bar");
+		} else {
+			activityBarLabel = nls.localize({ key: 'miShowActivityBar', comment: ['&& denotes a mnemonic'] }, "Show &&Activity Bar");
+		}
+		const toggleActivtyBar = this.createMenuItem(activityBarLabel, 'workbench.action.toggleActivityBarVisibility');
 
 		const toggleWordWrap = this.createMenuItem(nls.localize({ key: 'miToggleWordWrap', comment: ['&& denotes a mnemonic'] }, "Toggle &&Word Wrap"), 'editor.action.toggleWordWrap');
 		const toggleRenderWhitespace = this.createMenuItem(nls.localize({ key: 'miToggleRenderWhitespace', comment: ['&& denotes a mnemonic'] }, "Toggle &&Render Whitespace"), 'editor.action.toggleRenderWhitespace');
 		const toggleRenderControlCharacters = this.createMenuItem(nls.localize({ key: 'miToggleRenderControlCharacters', comment: ['&& denotes a mnemonic'] }, "Toggle &&Control Characters"), 'editor.action.toggleRenderControlCharacter');
-
 
 		const zoomIn = this.createMenuItem(nls.localize({ key: 'miZoomIn', comment: ['&& denotes a mnemonic'] }, "&&Zoom In"), 'workbench.action.zoomIn');
 		const zoomOut = this.createMenuItem(nls.localize({ key: 'miZoomOut', comment: ['&& denotes a mnemonic'] }, "Zoom O&&ut"), 'workbench.action.zoomOut');
@@ -519,10 +594,12 @@ export class VSCodeMenu {
 			platform.isWindows || platform.isLinux ? toggleMenuBar : void 0,
 			__separator__(),
 			splitEditor,
+			toggleEditorLayout,
 			moveSidebar,
 			toggleSidebar,
 			togglePanel,
 			toggleStatusbar,
+			toggleActivtyBar,
 			__separator__(),
 			toggleWordWrap,
 			toggleRenderWhitespace,
@@ -557,9 +634,9 @@ export class VSCodeMenu {
 
 		const switchGroupMenu = new Menu();
 
-		const focusFirstGroup = this.createMenuItem(nls.localize({ key: 'miFocusFirstGroup', comment: ['&& denotes a mnemonic'] }, "&&Left Group"), 'workbench.action.focusFirstEditorGroup');
-		const focusSecondGroup = this.createMenuItem(nls.localize({ key: 'miFocusSecondGroup', comment: ['&& denotes a mnemonic'] }, "&&Center Group"), 'workbench.action.focusSecondEditorGroup');
-		const focusThirdGroup = this.createMenuItem(nls.localize({ key: 'miFocusThirdGroup', comment: ['&& denotes a mnemonic'] }, "&&Right Group"), 'workbench.action.focusThirdEditorGroup');
+		const focusFirstGroup = this.createMenuItem(nls.localize({ key: 'miFocusFirstGroup', comment: ['&& denotes a mnemonic'] }, "&&First Group"), 'workbench.action.focusFirstEditorGroup');
+		const focusSecondGroup = this.createMenuItem(nls.localize({ key: 'miFocusSecondGroup', comment: ['&& denotes a mnemonic'] }, "&&Second Group"), 'workbench.action.focusSecondEditorGroup');
+		const focusThirdGroup = this.createMenuItem(nls.localize({ key: 'miFocusThirdGroup', comment: ['&& denotes a mnemonic'] }, "&&Third Group"), 'workbench.action.focusThirdEditorGroup');
 		const nextGroup = this.createMenuItem(nls.localize({ key: 'miNextGroup', comment: ['&& denotes a mnemonic'] }, "&&Next Group"), 'workbench.action.focusNextGroup');
 		const previousGroup = this.createMenuItem(nls.localize({ key: 'miPreviousGroup', comment: ['&& denotes a mnemonic'] }, "&&Previous Group"), 'workbench.action.focusPreviousGroup');
 
@@ -611,7 +688,12 @@ export class VSCodeMenu {
 	private toggleDevTools(): void {
 		const w = this.windowsService.getFocusedWindow();
 		if (w && w.win) {
-			w.win.webContents.toggleDevTools();
+			const contents = w.win.webContents;
+			if (w.hasHiddenTitleBarStyle() && !w.win.isFullScreen() && !contents.isDevToolsOpened()) {
+				contents.openDevTools({ mode: 'undocked' }); // due to https://github.com/electron/electron/issues/3647
+			} else {
+				contents.toggleDevTools();
+			}
 		}
 	}
 
@@ -642,16 +724,20 @@ export class VSCodeMenu {
 			}
 		}
 
+		const keyboardShortcutsUrl = platform.isLinux ? product.keyboardShortcutsUrlLinux : platform.isMacintosh ? product.keyboardShortcutsUrlMac : product.keyboardShortcutsUrlWin;
 		arrays.coalesce([
 			product.documentationUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miDocumentation', comment: ['&& denotes a mnemonic'] }, "&&Documentation")), click: () => this.openUrl(product.documentationUrl, 'openDocumentationUrl') }) : null,
 			product.releaseNotesUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miReleaseNotes', comment: ['&& denotes a mnemonic'] }, "&&Release Notes")), click: () => this.windowsService.sendToFocused('vscode:runAction', 'update.showCurrentReleaseNotes') }) : null,
 			(product.documentationUrl || product.releaseNotesUrl) ? __separator__() : null,
+			keyboardShortcutsUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miKeyboardShortcuts', comment: ['&& denotes a mnemonic'] }, "&&Keyboard Shortcuts Reference")), click: () => this.openUrl(keyboardShortcutsUrl, 'openKeyboardShortcutsUrl') }) : null,
+			product.introductoryVideosUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miIntroductoryVideos', comment: ['&& denotes a mnemonic'] }, "Introductory &&Videos")), click: () => this.openUrl(product.introductoryVideosUrl, 'openIntroductoryVideosUrl') }) : null,
+			(product.introductoryVideosUrl || keyboardShortcutsUrl) ? __separator__() : null,
 			product.twitterUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miTwitter', comment: ['&& denotes a mnemonic'] }, "&&Join us on Twitter")), click: () => this.openUrl(product.twitterUrl, 'openTwitterUrl') }) : null,
 			product.requestFeatureUrl ? new MenuItem({ label: mnemonicLabel(nls.localize({ key: 'miUserVoice', comment: ['&& denotes a mnemonic'] }, "&&Search Feature Requests")), click: () => this.openUrl(product.requestFeatureUrl, 'openUserVoiceUrl') }) : null,
 			reportIssuesItem,
 			(product.twitterUrl || product.requestFeatureUrl || product.reportIssueUrl) ? __separator__() : null,
 			product.licenseUrl ? new MenuItem({
-				label: mnemonicLabel(nls.localize({ key: 'miLicense', comment: ['&& denotes a mnemonic'] }, "&&View License")), click: () => {
+				label: mnemonicLabel(nls.localize({ key: 'miLicense', comment: ['&& denotes a mnemonic'] }, "View &&License")), click: () => {
 					if (platform.language) {
 						const queryArgChar = product.licenseUrl.indexOf('?') > 0 ? '&' : '?';
 						this.openUrl(`${product.licenseUrl}${queryArgChar}lang=${platform.language}`, 'openLicenseUrl');
@@ -693,11 +779,10 @@ export class VSCodeMenu {
 				return [];
 
 			case UpdateState.UpdateDownloaded:
-				const update = this.updateService.availableUpdate;
 				return [new MenuItem({
 					label: nls.localize('miRestartToUpdate', "Restart To Update..."), click: () => {
 						this.reportMenuActionTelemetry('RestartToUpdate');
-						update.quitAndUpdate();
+						this.updateService.quitAndInstall();
 					}
 				})];
 
@@ -706,10 +791,9 @@ export class VSCodeMenu {
 
 			case UpdateState.UpdateAvailable:
 				if (platform.isLinux) {
-					const update = this.updateService.availableUpdate;
 					return [new MenuItem({
 						label: nls.localize('miDownloadUpdate', "Download Available Update"), click: () => {
-							update.quitAndUpdate();
+							this.updateService.quitAndInstall();
 						}
 					})];
 				}
@@ -724,7 +808,7 @@ export class VSCodeMenu {
 				const result = [new MenuItem({
 					label: nls.localize('miCheckForUpdates', "Check For Updates..."), click: () => setTimeout(() => {
 						this.reportMenuActionTelemetry('CheckForUpdate');
-						this.updateService.checkForUpdates(true);
+						this.updateService.checkForUpdates(true).done(null, err => console.error(err));
 					}, 0)
 				})];
 
@@ -732,12 +816,13 @@ export class VSCodeMenu {
 		}
 	}
 
-	private createMenuItem(label: string, actionId: string, enabled?: boolean): Electron.MenuItem;
-	private createMenuItem(label: string, click: () => void, enabled?: boolean): Electron.MenuItem;
-	private createMenuItem(arg1: string, arg2: any, arg3?: boolean): Electron.MenuItem {
+	private createMenuItem(label: string, actionId: string, enabled?: boolean, checked?: boolean): Electron.MenuItem;
+	private createMenuItem(label: string, click: () => void, enabled?: boolean, checked?: boolean): Electron.MenuItem;
+	private createMenuItem(arg1: string, arg2: any, arg3?: boolean, arg4?: boolean): Electron.MenuItem {
 		const label = mnemonicLabel(arg1);
 		const click: () => void = (typeof arg2 === 'function') ? arg2 : () => this.windowsService.sendToFocused('vscode:runAction', arg2);
 		const enabled = typeof arg3 === 'boolean' ? arg3 : this.windowsService.getWindowCount() > 0;
+		const checked = typeof arg4 === 'boolean' ? arg4 : false;
 
 		let actionId: string;
 		if (typeof arg2 === 'string') {
@@ -750,6 +835,11 @@ export class VSCodeMenu {
 			click,
 			enabled
 		};
+
+		if (checked) {
+			options['type'] = 'checkbox';
+			options['checked'] = checked;
+		}
 
 		return new MenuItem(options);
 	}
@@ -822,7 +912,7 @@ export class VSCodeMenu {
 	}
 
 	private reportMenuActionTelemetry(id: string): void {
-		this.windowsService.sendToFocused('vscode:telemetry', { eventName: 'workbenchActionExecuted', data: { id, from: 'menu' } });
+		this.telemetryService.publicLog('workbenchActionExecuted', { id, from: 'menu' });
 	}
 }
 

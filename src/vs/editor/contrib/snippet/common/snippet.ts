@@ -6,13 +6,13 @@
 'use strict';
 
 import * as strings from 'vs/base/common/strings';
-import {Range} from 'vs/editor/common/core/range';
+import { Range } from 'vs/editor/common/core/range';
 import * as editorCommon from 'vs/editor/common/editorCommon';
 import * as collections from 'vs/base/common/collections';
 
 export class CodeSnippet implements ICodeSnippet {
 
-	static fromTextmate(template:string):CodeSnippet {
+	static fromTextmate(template: string): CodeSnippet {
 		return TextMateSnippetParser.parse(template);
 	}
 
@@ -159,7 +159,7 @@ const InternalFormatSnippetParser = new class implements ISnippetParser {
 
 	private parseTemplate(template: string): void {
 
-		var placeHoldersMap: collections.IStringDictionary<IPlaceHolder> = {};
+		var placeHoldersMap: collections.IStringDictionary<IPlaceHolder> = Object.create(null);
 		var i: number, len: number, j: number, lenJ: number, templateLines = template.split('\n');
 
 		for (i = 0, len = templateLines.length; i < len; i++) {
@@ -226,11 +226,24 @@ const InternalFormatSnippetParser = new class implements ISnippetParser {
 		}
 	}
 
-	private parseLine(line: string, findDefaultValueForId: (id: string) => string): IParsedLine {
+	private parseLine(line: string, findDefaultValueForIdFromPrevLines: (id: string) => string): IParsedLine {
 
 		// Placeholder 0 is the entire line
 		var placeHolderStack: { placeHolderId: string; placeHolderText: string; }[] = [{ placeHolderId: '', placeHolderText: '' }];
 		var placeHolders: IParsedLinePlaceHolderInfo[] = [];
+
+		const findDefaultValueForId = (id) => {
+			const result = findDefaultValueForIdFromPrevLines(id);
+			if (result) {
+				return result;
+			}
+			for (const placeHolder of placeHolders) {
+				if (placeHolder.id === id && placeHolder.value) {
+					return placeHolder.value;
+				}
+			}
+			return '';
+		};
 
 		var i = 0;
 		var len = line.length;

@@ -11,7 +11,7 @@ import { distinct } from 'vs/base/common/arrays';
 import { getErrorMessage } from 'vs/base/common/errors';
 import { memoize } from 'vs/base/common/decorators';
 import { ArraySet } from 'vs/base/common/set';
-import { IGalleryExtension, IExtensionGalleryService, IQueryOptions, SortBy, SortOrder, IExtensionManifest } from 'vs/platform/extensionManagement/common/extensionManagement';
+import { IGalleryExtension, IExtensionGalleryService, IQueryOptions, SortBy, SortOrder, IExtensionManifest, EXTENSION_IDENTIFIER_REGEX } from 'vs/platform/extensionManagement/common/extensionManagement';
 import { getGalleryExtensionTelemetryData } from 'vs/platform/extensionManagement/common/extensionTelemetry';
 import { assign, getOrDefault } from 'vs/base/common/objects';
 import { IRequestService } from 'vs/platform/request/common/request';
@@ -23,6 +23,7 @@ import pkg from 'vs/platform/package';
 import product from 'vs/platform/product';
 import { isVersionValid } from 'vs/platform/extensions/node/extensionValidator';
 import * as url from 'url';
+import { getCommonHTTPHeaders } from 'vs/platform/environment/node/http';
 
 interface IRawGalleryExtensionFile {
 	assetType: string;
@@ -143,7 +144,7 @@ const DefaultQueryState: IQueryState = {
 
 class Query {
 
-	constructor(private state = DefaultQueryState) {}
+	constructor(private state = DefaultQueryState) { }
 
 	get pageNumber(): number { return this.state.pageNumber; }
 	get pageSize(): number { return this.state.pageSize; }
@@ -227,7 +228,7 @@ function toExtension(galleryExtension: IRawGalleryExtension, extensionsGalleryUr
 		manifest: getAssetSource(version.files, AssetType.Manifest),
 		readme: getAssetSource(version.files, AssetType.Details),
 		changelog: getAssetSource(version.files, AssetType.Changelog),
-		download: `${ getAssetSource(version.files, AssetType.VSIX) }?install=true`,
+		download: `${getAssetSource(version.files, AssetType.VSIX)}?install=true`,
 		icon,
 		iconFallback,
 		license: getAssetSource(version.files, AssetType.License)
@@ -261,19 +262,8 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	private extensionsGalleryUrl: string;
 
 	@memoize
-	private get commonHeaders(): TPromise<{ [key: string]: string; }> {
-		return this.telemetryService.getTelemetryInfo().then(({ machineId }) => {
-			const result: { [key: string]: string; } = {
-				'X-Market-Client-Id': `VSCode ${ pkg.version }`,
-				'User-Agent': `VSCode ${ pkg.version }`
-			};
-
-			if (machineId) {
-				result['X-Market-User-Id'] = machineId;
-			}
-
-			return result;
-		});
+	private get commonHTTPHeaders(): TPromise<{ [key: string]: string; }> {
+		return getCommonHTTPHeaders();
 	}
 
 	constructor(
@@ -286,11 +276,15 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	}
 
 	private api(path = ''): string {
-		return `${ this.extensionsGalleryUrl }${ path }`;
+		return `${this.extensionsGalleryUrl}${path}`;
 	}
 
 	isEnabled(): boolean {
 		return !!this.extensionsGalleryUrl;
+	}
+
+	getRequestHeaders(): TPromise<{ [key: string]: string; }> {
+		return this.commonHTTPHeaders;
 	}
 
 	query(options: IQueryOptions = {}): TPromise<IPager<IGalleryExtension>> {
@@ -340,7 +334,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	}
 
 	private queryGallery(query: Query): TPromise<{ galleryExtensions: IRawGalleryExtension[], total: number; }> {
-		return this.commonHeaders
+		return this.commonHTTPHeaders
 			.then(headers => {
 				const data = JSON.stringify(query.raw);
 
@@ -385,13 +379,12 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	}
 
 	getAsset(url: string): TPromise<IRequestContext> {
-		return this._getAsset({ url });
+		return this._getAsset({ url });
 	}
 
 	getAllDependencies(extension: IGalleryExtension): TPromise<IGalleryExtension[]> {
 		return this.loadCompatibleVersion(<IGalleryExtension>extension)
-			.then(compatible => this.getDependenciesReccursively(compatible.properties.dependencies, [extension]))
-			.then(dependencies => dependencies.slice(1));
+			.then(compatible => this.getDependenciesReccursively(compatible.properties.dependencies, [], extension));
 	}
 
 	loadCompatibleVersion(extension: IGalleryExtension): TPromise<IGalleryExtension> {
@@ -423,6 +416,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 	}
 
 	private loadDependencies(extensionNames: string[]): TPromise<IGalleryExtension[]> {
+		extensionNames = extensionNames.filter(e => EXTENSION_IDENTIFIER_REGEX.test(e));
 		let query = new Query()
 			.withFlags(Flags.IncludeLatestVersionOnly, Flags.IncludeAssetUri, Flags.IncludeStatistics, Flags.IncludeFiles, Flags.IncludeVersionProperties)
 			.withPage(1, extensionNames.length)
@@ -445,9 +439,12 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 		});
 	}
 
-	private getDependenciesReccursively(toGet: string[], result: IGalleryExtension[]): TPromise<IGalleryExtension[]> {
+	private getDependenciesReccursively(toGet: string[], result: IGalleryExtension[], root: IGalleryExtension): TPromise<IGalleryExtension[]> {
 		if (!toGet || !toGet.length) {
 			return TPromise.wrap(result);
+		}
+		if (toGet.indexOf(`${root.publisher}.${root.name}`) !== -1 && result.indexOf(root) === -1) {
+			result.push(root);
 		}
 		toGet = result.length ? toGet.filter(e => !ExtensionGalleryService.hasExtensionByName(result, e)) : toGet;
 		if (!toGet.length) {
@@ -464,7 +461,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 				}
 				result = distinct(result.concat(loadedDependencies), d => d.id);
 				const dependencies = dependenciesSet.elements.filter(d => !ExtensionGalleryService.hasExtensionByName(result, d));
-				return this.getDependenciesReccursively(dependencies, result);
+				return this.getDependenciesReccursively(dependencies, result, root);
 			});
 	}
 
@@ -477,7 +474,7 @@ export class ExtensionGalleryService implements IExtensionGalleryService {
 		parsedUrl.search = undefined;
 		parsedUrl.query['redirect'] = 'true';
 
-		return this.commonHeaders.then(headers => {
+		return this.commonHTTPHeaders.then(headers => {
 			headers = assign({}, headers, options.headers || {});
 			options = assign({}, options, { headers });
 

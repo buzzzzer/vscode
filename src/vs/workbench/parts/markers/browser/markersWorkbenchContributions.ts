@@ -18,8 +18,7 @@ import * as panel from 'vs/workbench/browser/panel';
 import { Extensions, IConfigurationRegistry } from 'vs/platform/configuration/common/configurationRegistry';
 import * as markersPanelActions from 'vs/workbench/parts/markers/browser/markersPanelActions';
 
-class StatusUpdater implements IWorkbenchContribution
-{
+class StatusUpdater implements IWorkbenchContribution {
 	static ID = 'vs.markers.statusUpdater';
 
 	private toDispose: lifecycle.IDisposable[];
@@ -37,7 +36,7 @@ class StatusUpdater implements IWorkbenchContribution
 		const stats = this.markerService.getStatistics();
 		const problemCount = stats.errors + stats.warnings + stats.infos + stats.unknowns;
 		if (problemCount > 0) {
-			const badge = new NumberBadge(problemCount, n => localize('errorsAndWarnings', '{0} Errors and Warnings', n));
+			const badge = new NumberBadge(problemCount, n => localize({ comment: ['Argument represents count (number) of errors and warnings.'], key: 'errorsAndWarnings' }, '{0} Errors and Warnings', n));
 			this.activityService.showActivity(Constants.MARKERS_PANEL_ID, badge);
 		} else {
 			this.activityService.showActivity(Constants.MARKERS_PANEL_ID, null);
@@ -87,7 +86,7 @@ export function registerContributions(): void {
 	}), 'View: ' + Messages.MARKERS_PANEL_TOGGLE_LABEL, Messages.MARKERS_PANEL_VIEW_CATEGORY);
 
 	// Retaining old action to show errors and warnings, so that custom bindings to this action for existing users works.
-	registry.registerWorkbenchAction(new SyncActionDescriptor(markersPanelActions.ToggleErrorsAndWarningsAction, markersPanelActions.ToggleErrorsAndWarningsAction.ID, ''), Messages.SHOW_ERRORS_WARNINGS_ACTION_LABEL);
+	registry.registerWorkbenchAction(new SyncActionDescriptor(markersPanelActions.ToggleErrorsAndWarningsAction, markersPanelActions.ToggleErrorsAndWarningsAction.ID, Messages.SHOW_ERRORS_WARNINGS_ACTION_LABEL), '');
 
 	// Register StatusUpdater
 	(<IWorkbenchContributionsRegistry>platform.Registry.as(WorkbenchExtensions.Workbench)).registerWorkbenchContribution(

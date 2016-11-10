@@ -8,18 +8,18 @@
 import 'vs/css!./actionbar';
 import nls = require('vs/nls');
 import lifecycle = require('vs/base/common/lifecycle');
-import {Promise} from 'vs/base/common/winjs.base';
-import {Builder, $} from 'vs/base/browser/builder';
-import {SelectBox} from 'vs/base/browser/ui/selectBox/selectBox';
+import { Promise } from 'vs/base/common/winjs.base';
+import { Builder, $ } from 'vs/base/browser/builder';
+import { SelectBox } from 'vs/base/browser/ui/selectBox/selectBox';
 import platform = require('vs/base/common/platform');
-import {IAction, IActionRunner, Action, IActionChangeEvent, ActionRunner} from 'vs/base/common/actions';
+import { IAction, IActionRunner, Action, IActionChangeEvent, ActionRunner } from 'vs/base/common/actions';
 import DOM = require('vs/base/browser/dom');
-import {EventType as CommonEventType} from 'vs/base/common/events';
+import { EventType as CommonEventType } from 'vs/base/common/events';
 import types = require('vs/base/common/types');
-import {IEventEmitter, EventEmitter} from 'vs/base/common/eventEmitter';
-import {Gesture, EventType} from 'vs/base/browser/touch';
-import {StandardKeyboardEvent} from 'vs/base/browser/keyboardEvent';
-import {KeyCode, KeyMod} from 'vs/base/common/keyCodes';
+import { IEventEmitter, EventEmitter } from 'vs/base/common/eventEmitter';
+import { Gesture, EventType } from 'vs/base/browser/touch';
+import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
 
 export interface IActionItem extends IEventEmitter {
 	actionRunner: IActionRunner;
@@ -529,6 +529,13 @@ export class ActionBar extends EventEmitter implements IActionRunner {
 		});
 	}
 
+	public pull(index: number): void {
+		if (index >= 0 && index < this.items.length) {
+			this.items.splice(index, 1);
+			this.actionsList.removeChild(this.actionsList.childNodes[index]);
+		}
+	}
+
 	public clear(): void {
 		// Do not dispose action items if they were provided from outside
 		this.items = this.options.actionItemProvider ? [] : lifecycle.dispose(this.items);
@@ -692,10 +699,6 @@ export class SelectActionItem extends BaseActionItem {
 		if (this.selectBox) {
 			this.selectBox.focus();
 		}
-	}
-
-	public set enabled(value: boolean) {
-		this.selectBox.enabled = value;
 	}
 
 	public blur(): void {

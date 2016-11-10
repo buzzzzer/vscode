@@ -4,17 +4,17 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import Event, {Emitter} from 'vs/base/common/event';
-import {TPromise} from 'vs/base/common/winjs.base';
+import Event, { Emitter } from 'vs/base/common/event';
+import { TPromise } from 'vs/base/common/winjs.base';
 import URI from 'vs/base/common/uri';
-import {TextFileEditorModel} from 'vs/workbench/services/textfile/common/textFileEditorModel';
-import {dispose, IDisposable} from 'vs/base/common/lifecycle';
-import {IEditorGroupService} from 'vs/workbench/services/group/common/groupService';
-import {ModelState, ITextFileEditorModel, LocalFileChangeEvent, ITextFileEditorModelManager, TextFileModelChangeEvent, StateChange} from 'vs/workbench/services/textfile/common/textfiles';
-import {ILifecycleService} from 'vs/platform/lifecycle/common/lifecycle';
-import {IEventService} from 'vs/platform/event/common/event';
-import {IInstantiationService} from 'vs/platform/instantiation/common/instantiation';
-import {FileChangesEvent, EventType as CommonFileEventType} from 'vs/platform/files/common/files';
+import { TextFileEditorModel } from 'vs/workbench/services/textfile/common/textFileEditorModel';
+import { dispose, IDisposable } from 'vs/base/common/lifecycle';
+import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
+import { ModelState, ITextFileEditorModel, LocalFileChangeEvent, ITextFileEditorModelManager, TextFileModelChangeEvent, StateChange } from 'vs/workbench/services/textfile/common/textfiles';
+import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
+import { IEventService } from 'vs/platform/event/common/event';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { FileChangesEvent, EventType as CommonFileEventType } from 'vs/platform/files/common/files';
 
 export class TextFileEditorModelManager implements ITextFileEditorModelManager {
 
@@ -65,8 +65,9 @@ export class TextFileEditorModelManager implements ITextFileEditorModelManager {
 
 	private registerListeners(): void {
 
-		// Editors changing
+		// Editors changing/closing
 		this.toUnbind.push(this.editorGroupService.onEditorsChanged(() => this.onEditorsChanged()));
+		this.toUnbind.push(this.editorGroupService.getStacksModel().onEditorClosed(() => this.onEditorClosed()));
 
 		// File changes
 		this.toUnbind.push(this.eventService.addListener2('files.internal:fileChanged', (e: LocalFileChangeEvent) => this.onLocalFileChange(e)));
@@ -77,6 +78,10 @@ export class TextFileEditorModelManager implements ITextFileEditorModelManager {
 	}
 
 	private onEditorsChanged(): void {
+		this.disposeUnusedModels();
+	}
+
+	private onEditorClosed(): void {
 		this.disposeUnusedModels();
 	}
 
@@ -166,7 +171,7 @@ export class TextFileEditorModelManager implements ITextFileEditorModelManager {
 		return this.mapResourceToModel[resource.toString()];
 	}
 
-	public loadOrCreate(resource: URI, encoding: string, refresh?: boolean): TPromise<ITextFileEditorModel> {
+	public loadOrCreate(resource: URI, encoding?: string, refresh?: boolean): TPromise<ITextFileEditorModel> {
 
 		// Return early if model is currently being loaded
 		const pendingLoad = this.mapResourceToPendingModelLoaders[resource.toString()];
