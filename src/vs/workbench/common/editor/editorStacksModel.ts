@@ -948,7 +948,7 @@ export class EditorStacksModel implements IEditorStacksModel {
 		return this._groups[position];
 	}
 
-	public next(): IEditorIdentifier {
+	public next(jumpGroups: boolean): IEditorIdentifier {
 		this.ensureLoaded();
 
 		if (!this.activeGroup) {
@@ -960,6 +960,11 @@ export class EditorStacksModel implements IEditorStacksModel {
 		// Return next in group
 		if (index + 1 < this.activeGroup.count) {
 			return { group: this.activeGroup, editor: this.activeGroup.getEditor(index + 1) };
+		}
+
+		// Return first if we are not jumping groups
+		if (!jumpGroups) {
+			return { group: this.activeGroup, editor: this.activeGroup.getEditor(0) };
 		}
 
 		// Return first in next group
@@ -974,7 +979,7 @@ export class EditorStacksModel implements IEditorStacksModel {
 		return { group: firstGroup, editor: firstGroup.getEditor(0) };
 	}
 
-	public previous(): IEditorIdentifier {
+	public previous(jumpGroups: boolean): IEditorIdentifier {
 		this.ensureLoaded();
 
 		if (!this.activeGroup) {
@@ -986,6 +991,11 @@ export class EditorStacksModel implements IEditorStacksModel {
 		// Return previous in group
 		if (index > 0) {
 			return { group: this.activeGroup, editor: this.activeGroup.getEditor(index - 1) };
+		}
+
+		// Return last if we are not jumping groups
+		if (!jumpGroups) {
+			return { group: this.activeGroup, editor: this.activeGroup.getEditor(this.activeGroup.count - 1) };
 		}
 
 		// Return last in previous group
@@ -1101,10 +1111,7 @@ export class EditorStacksModel implements IEditorStacksModel {
 		const unbind: IDisposable[] = [];
 		unbind.push(group.onEditorsStructureChanged(editor => this._onModelChanged.fire({ group, editor, structural: true })));
 		unbind.push(group.onEditorStateChanged(editor => this._onModelChanged.fire({ group, editor })));
-		unbind.push(group.onEditorOpened(editor => {
-			this.handleOnEditorOpened(editor);
-			this._onEditorOpened.fire({ editor, group });
-		}));
+		unbind.push(group.onEditorOpened(editor => this._onEditorOpened.fire({ editor, group })));
 		unbind.push(group.onEditorClosed(event => {
 			this.handleOnEditorClosed(event);
 			this._onEditorClosed.fire(event);
@@ -1119,10 +1126,6 @@ export class EditorStacksModel implements IEditorStacksModel {
 		}));
 
 		return group;
-	}
-
-	private handleOnEditorOpened(editor: EditorInput): void {
-		this.telemetryService.publicLog('editorOpened', editor.getTelemetryDescriptor());
 	}
 
 	private handleOnEditorClosed(event: GroupEvent): void {
@@ -1141,8 +1144,6 @@ export class EditorStacksModel implements IEditorStacksModel {
 				});
 			}
 		}
-
-		this.telemetryService.publicLog('editorClosed', editor.getTelemetryDescriptor());
 	}
 
 	public isOpen(resource: URI): boolean;

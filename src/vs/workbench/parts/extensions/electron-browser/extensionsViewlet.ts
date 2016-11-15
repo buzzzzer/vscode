@@ -38,7 +38,7 @@ import { InstallVSIXAction } from 'vs/workbench/parts/extensions/electron-browse
 import { IExtensionManagementService, IExtensionGalleryService, IExtensionTipsService, SortBy, SortOrder, IQueryOptions, LocalExtensionType } from 'vs/platform/extensionManagement/common/extensionManagement';
 import { ExtensionsInput } from 'vs/workbench/parts/extensions/common/extensionsInput';
 import { Query } from '../common/extensionQuery';
-import { OpenGlobalSettingsAction } from 'vs/workbench/browser/actions/openSettings';
+import { OpenGlobalSettingsAction } from 'vs/workbench/parts/settings/browser/openSettingsActions';
 import { IProgressService } from 'vs/platform/progress/common/progress';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
@@ -302,17 +302,18 @@ export class ExtensionsViewlet extends Viewlet implements IExtensionsViewlet {
 
 	private getWorkspaceRecommendationsModel(query: Query, options: IQueryOptions): TPromise<IPagedModel<IExtension>> {
 		const value = query.value.replace(/@recommended:workspace/g, '').trim().toLowerCase();
-		const names = this.tipsService.getWorkspaceRecommendations()
-			.filter(name => name.toLowerCase().indexOf(value) > -1);
+		return this.tipsService.getWorkspaceRecommendations()
+			.then(recommendations => {
+				const names = recommendations.filter(name => name.toLowerCase().indexOf(value) > -1);
+				this.telemetryService.publicLog('extensionWorkspaceRecommendations:open', { count: names.length });
 
-		this.telemetryService.publicLog('extensionWorkspaceRecommendations:open', { count: names.length });
+				if (!names.length) {
+					return TPromise.as(new PagedModel([]));
+				}
 
-		if (!names.length) {
-			return TPromise.as(new PagedModel([]));
-		}
-
-		return this.extensionsWorkbenchService.queryGallery(assign(options, { names, pageSize: names.length }))
-			.then(result => new PagedModel(result));
+				return this.extensionsWorkbenchService.queryGallery(assign(options, { names, pageSize: names.length }))
+					.then(result => new PagedModel(result));
+			});
 	}
 
 	private openExtension(extension: IExtension): void {
