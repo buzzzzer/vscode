@@ -27,7 +27,7 @@ import { IExtensionManagementService, LocalExtensionType, ILocalExtension } from
 import { IWorkspaceConfigurationService } from 'vs/workbench/services/configuration/common/configuration';
 import { CommandsRegistry } from 'vs/platform/commands/common/commands';
 import paths = require('vs/base/common/paths');
-import { isMacintosh } from 'vs/base/common/platform';
+import { isMacintosh, isLinux } from 'vs/base/common/platform';
 import { IQuickOpenService, IFilePickOpenEntry, ISeparator } from 'vs/workbench/services/quickopen/common/quickOpenService';
 import { KeyMod } from 'vs/base/common/keyCodes';
 import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
@@ -340,8 +340,9 @@ export class ShowStartupPerformance extends Action {
 		setTimeout(() => {
 			(<any>console).group('Startup Performance Measurement');
 			const fingerprint: IStartupFingerprint = timers.fingerprint;
+			console.log(`OS: ${fingerprint.platform} (${fingerprint.release})`);
 			console.log(`CPUs: ${fingerprint.cpus.model} (${fingerprint.cpus.count} x ${fingerprint.cpus.speed})`);
-			console.log(`Total Memory: ${(fingerprint.totalmem / (1024 * 1024 * 1024)).toFixed(2)}GB`);
+			console.log(`Memory: ${(fingerprint.totalmem / (1024 * 1024 * 1024)).toFixed(2)}GB (${(fingerprint.freemem / (1024 * 1024 * 1024)).toFixed(2)}GB free)`);
 			console.log(`Initial Startup: ${fingerprint.initialStartup}`);
 			console.log(`Screen Reader Active: ${fingerprint.hasAccessibilitySupport}`);
 			console.log(`Empty Workspace: ${fingerprint.emptyWorkbench}`);
@@ -612,6 +613,27 @@ Steps to Reproduce:
 		}).join('\n');
 
 		return tableHeader + '\n' + table;
+	}
+}
+
+export class KeybindingsReferenceAction extends Action {
+
+	public static ID = 'workbench.action.keybindingsReference';
+	public static LABEL = nls.localize('keybindingsReference', "Keyboard Shortcuts Reference");
+
+	private static URL = isLinux ? product.keyboardShortcutsUrlLinux : isMacintosh ? product.keyboardShortcutsUrlMac : product.keyboardShortcutsUrlWin;
+	public static AVAILABLE = !!KeybindingsReferenceAction.URL;
+
+	constructor(
+		id: string,
+		label: string
+	) {
+		super(id, label);
+	}
+
+	public run(): TPromise<void> {
+		window.open(KeybindingsReferenceAction.URL);
+		return null;
 	}
 }
 

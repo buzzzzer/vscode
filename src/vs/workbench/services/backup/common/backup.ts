@@ -27,8 +27,6 @@ export interface IBackupService {
 	isHotExitEnabled: boolean;
 	backupBeforeShutdown(dirtyToBackup: Uri[], textFileEditorModelManager: ITextFileEditorModelManager, quitRequested: boolean): TPromise<IBackupResult>;
 	cleanupBackupsBeforeShutdown(): TPromise<void>;
-
-	doBackup(resource: Uri, content: string, immediate?: boolean): TPromise<void>;
 }
 
 /**
@@ -50,7 +48,7 @@ export interface IBackupFileService {
 	 * @param resource The resource to check.
 	 * @returns Whether the file has a backup.
 	 */
-	hasTextFileBackup(resource: Uri): TPromise<boolean>;
+	hasBackup(resource: Uri): TPromise<boolean>;
 
 	/**
 	 * Gets the backup resource for a particular resource within the current workspace.

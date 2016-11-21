@@ -5,8 +5,9 @@
 
 'use strict';
 
-import { StyleMutator } from 'vs/base/browser/styleMutator';
+import { StyleMutator, FastDomNode, createFastDomNode } from 'vs/base/browser/styleMutator';
 import * as editorCommon from 'vs/editor/common/editorCommon';
+import { ClassNames } from 'vs/editor/browser/editorBrowser';
 import { ViewPart } from 'vs/editor/browser/view/viewPart';
 import { ViewContext } from 'vs/editor/common/view/viewContext';
 import { IRenderingContext, IRestrictedRenderingContext } from 'vs/editor/common/view/renderingContext';
@@ -16,16 +17,20 @@ export class Margin extends ViewPart {
 	public domNode: HTMLElement;
 	private _layoutProvider: ILayoutProvider;
 	private _canUseTranslate3d: boolean;
-	private _height: number;
 	private _contentLeft: number;
+	private _glyphMarginLeft: number;
+	private _glyphMarginWidth: number;
+	private _glyphMarginBackgroundDomNode: FastDomNode;
 
 	constructor(context: ViewContext, layoutProvider: ILayoutProvider) {
 		super(context);
 		this._layoutProvider = layoutProvider;
 		this._canUseTranslate3d = this._context.configuration.editor.viewInfo.canUseTranslate3d;
-		this.domNode = this._createDomNode();
-		this._height = this._context.configuration.editor.layoutInfo.contentHeight;
 		this._contentLeft = this._context.configuration.editor.layoutInfo.contentLeft;
+		this._glyphMarginLeft = this._context.configuration.editor.layoutInfo.glyphMarginLeft;
+		this._glyphMarginWidth = this._context.configuration.editor.layoutInfo.glyphMarginWidth;
+
+		this.domNode = this._createDomNode();
 	}
 
 	public dispose(): void {
@@ -34,10 +39,15 @@ export class Margin extends ViewPart {
 
 	public _createDomNode(): HTMLElement {
 		let domNode = document.createElement('div');
-		domNode.className = 'margin monaco-editor-background';
+		domNode.className = ClassNames.MARGIN + ' monaco-editor-background';
 		domNode.style.position = 'absolute';
 		domNode.setAttribute('role', 'presentation');
 		domNode.setAttribute('aria-hidden', 'true');
+
+		this._glyphMarginBackgroundDomNode = createFastDomNode(document.createElement('div'));
+		this._glyphMarginBackgroundDomNode.setClassName(ClassNames.GLYPH_MARGIN);
+
+		domNode.appendChild(this._glyphMarginBackgroundDomNode.domNode);
 		return domNode;
 	}
 
@@ -57,6 +67,9 @@ export class Margin extends ViewPart {
 
 	public onLayoutChanged(layoutInfo: editorCommon.EditorLayoutInfo): boolean {
 		this._contentLeft = layoutInfo.contentLeft;
+		this._glyphMarginLeft = layoutInfo.glyphMarginLeft;
+		this._glyphMarginWidth = layoutInfo.glyphMarginWidth;
+
 		return super.onLayoutChanged(layoutInfo) || true;
 	}
 
@@ -79,5 +92,9 @@ export class Margin extends ViewPart {
 		let height = Math.min(this._layoutProvider.getTotalHeight(), 1000000);
 		StyleMutator.setHeight(this.domNode, height);
 		StyleMutator.setWidth(this.domNode, this._contentLeft);
+
+		this._glyphMarginBackgroundDomNode.setLeft(this._glyphMarginLeft);
+		this._glyphMarginBackgroundDomNode.setWidth(this._glyphMarginWidth);
+		this._glyphMarginBackgroundDomNode.setHeight(height);
 	}
 }

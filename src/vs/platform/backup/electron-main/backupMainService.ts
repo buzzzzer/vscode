@@ -29,12 +29,12 @@ export class BackupMainService implements IBackupMainService {
 		this.backupHome = environmentService.backupHome;
 		this.workspacesJsonPath = environmentService.backupWorkspacesPath;
 
-		lifecycleService.onAfterUnload(this.onAfterUnloadWindow.bind(this));
+		lifecycleService.onBeforeUnload(this.onBeforeUnloadWindow.bind(this));
 
 		this.loadSync();
 	}
 
-	private onAfterUnloadWindow(vscodeWindow: VSCodeWindow) {
+	private onBeforeUnloadWindow(vscodeWindow: VSCodeWindow) {
 		if (vscodeWindow.openedWorkspacePath) {
 			// Clear out workspace from workspaces.json if it doesn't have any backups
 			const workspaceResource = Uri.file(vscodeWindow.openedWorkspacePath);
@@ -79,7 +79,7 @@ export class BackupMainService implements IBackupMainService {
 
 		// Allow sync here as it's only used in workbench initialization's critical path
 		try {
-			return readdirSync(untitledDir).map(file => path.join(untitledDir, file));
+			return readdirSync(untitledDir);
 		} catch (ex) {
 			return [];
 		}
