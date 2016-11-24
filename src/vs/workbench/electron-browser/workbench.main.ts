@@ -25,8 +25,8 @@ import 'vs/workbench/browser/actions/toggleStatusbarVisibility';
 import 'vs/workbench/browser/actions/toggleSidebarVisibility';
 import 'vs/workbench/browser/actions/toggleSidebarPosition';
 import 'vs/workbench/browser/actions/toggleEditorLayout';
-import 'vs/workbench/browser/actions/toggleFocusMode';
-import 'vs/workbench/parts/settings/browser/openSettings.contribution';
+import 'vs/workbench/browser/actions/toggleZenMode';
+import 'vs/workbench/parts/preferences/browser/preferences.contribution';
 import 'vs/workbench/browser/actions/configureLocale';
 
 import 'vs/workbench/parts/quickopen/browser/quickopen.contribution';
@@ -42,6 +42,8 @@ import 'vs/workbench/parts/backup/common/backup.contribution';
 import 'vs/workbench/parts/search/browser/search.contribution';
 import 'vs/workbench/parts/search/browser/searchViewlet'; // can be packaged separately
 import 'vs/workbench/parts/search/browser/openAnythingHandler'; // can be packaged separately
+
+import 'vs/workbench/parts/scm/browser/scm.contribution';
 
 import 'vs/workbench/parts/git/electron-browser/git.contribution';
 import 'vs/workbench/parts/git/browser/gitQuickOpen';

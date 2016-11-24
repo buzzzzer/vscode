@@ -226,6 +226,10 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(result);
 	}
 
+	getWindowCount(): TPromise<number> {
+		return TPromise.as(this.windowsMainService.getWindows().length);
+	}
+
 	log(severity: string, ...messages: string[]): TPromise<void> {
 		console[severity].apply(console, ...messages);
 		return TPromise.as(null);
@@ -253,6 +257,11 @@ export class WindowsService implements IWindowsService, IDisposable {
 
 	startCrashReporter(config: Electron.CrashReporterStartOptions): TPromise<void> {
 		crashReporter.start(config);
+		return TPromise.as(null);
+	}
+
+	quit(): TPromise<void> {
+		this.windowsMainService.quit();
 		return TPromise.as(null);
 	}
 

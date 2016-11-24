@@ -23,7 +23,7 @@ export interface ITelemetryInfo {
 
 export interface ITelemetryExperiments {
 	showDefaultViewlet: boolean;
-	showCommandsWatermark: boolean;
+	showFirstSessionWatermark: boolean;
 	openUntitledFile: boolean;
 }
 
@@ -46,7 +46,7 @@ export interface ITelemetryService {
 
 export const defaultExperiments: ITelemetryExperiments = {
 	showDefaultViewlet: false,
-	showCommandsWatermark: false,
+	showFirstSessionWatermark: false,
 	openUntitledFile: true
 };
 
@@ -80,7 +80,7 @@ export function loadExperiments(storageService: IStorageService, configurationSe
 
 	const random0 = parseFloat(valueString);
 	let [random1, showDefaultViewlet] = splitRandom(random0);
-	const [random2, showCommandsWatermark] = splitRandom(random1);
+	let [random2, showFirstSessionWatermark] = splitRandom(random1);
 	let [, openUntitledFile] = splitRandom(random2);
 
 	// is the user a first time user?
@@ -88,12 +88,13 @@ export function loadExperiments(storageService: IStorageService, configurationSe
 	if (!isNewSession) {
 		// for returning users we fall back to the default configuration for the sidebar and the initially opened, empty editor
 		showDefaultViewlet = defaultExperiments.showDefaultViewlet;
+		showFirstSessionWatermark = defaultExperiments.showFirstSessionWatermark;
 		openUntitledFile = defaultExperiments.openUntitledFile;
 	}
 
 	return applyOverrides(configurationService, {
 		showDefaultViewlet,
-		showCommandsWatermark,
+		showFirstSessionWatermark,
 		openUntitledFile
 	});
 }
@@ -168,8 +169,26 @@ export function configurationTelemetry(telemetryService: ITelemetryService, conf
 		if (event.source !== ConfigurationSource.Default) {
 			telemetryService.publicLog('updateConfiguration', {
 				configurationSource: ConfigurationSource[event.source],
-				configurationKeys: Object.keys(event.sourceConfig)
+				configurationKeys: flattenKeys(event.sourceConfig)
 			});
 		}
 	});
+}
+
+function flattenKeys(value: Object): string[] {
+	if (!value) {
+		return [];
+	}
+	const result: string[] = [];
+	flatKeys(result, '', value);
+	return result;
+}
+
+function flatKeys(result: string[], prefix: string, value: Object): void {
+	if (value && typeof value === 'object' && !Array.isArray(value)) {
+		Object.keys(value)
+			.forEach(key => flatKeys(result, prefix ? `${prefix}.${key}` : key, value[key]));
+	} else {
+		result.push(prefix);
+	}
 }

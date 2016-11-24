@@ -9,9 +9,13 @@ import Uri from 'vs/base/common/uri';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { TPromise } from 'vs/base/common/winjs.base';
 import { ITextFileEditorModelManager } from 'vs/workbench/services/textfile/common/textfiles';
+import { IResolveContentOptions, IUpdateContentOptions } from 'vs/platform/files/common/files';
 
 export const IBackupService = createDecorator<IBackupService>('backupService');
 export const IBackupFileService = createDecorator<IBackupFileService>('backupFileService');
+
+export const BACKUP_FILE_RESOLVE_OPTIONS: IResolveContentOptions = { acceptTextOnly: true, encoding: 'utf-8' };
+export const BACKUP_FILE_UPDATE_OPTIONS: IUpdateContentOptions = { encoding: 'utf-8' };
 
 export interface IBackupResult {
 	didBackup: boolean;
@@ -36,35 +40,21 @@ export interface IBackupFileService {
 	_serviceBrand: any;
 
 	/**
-	 * Gets the set of active workspace backup paths being tracked for restoration.
-	 *
-	 * @return The set of active workspace backup paths being tracked for restoration.
-	 */
-	getWorkspaceBackupPaths(): TPromise<string[]>;
-
-	/**
-	 * Gets whether a text file has a backup to restore.
-	 *
-	 * @param resource The resource to check.
-	 * @returns Whether the file has a backup.
-	 */
-	hasBackup(resource: Uri): TPromise<boolean>;
-
-	/**
-	 * Gets the backup resource for a particular resource within the current workspace.
+	 * Loads the backup resource for a particular resource within the current workspace.
 	 *
 	 * @param resource The resource that is backed up.
-	 * @return The backup resource.
+	 * @return The backup resource if any.
 	 */
-	getBackupResource(resource: Uri): Uri;
+	loadBackupResource(resource: Uri): TPromise<Uri>;
 
 	/**
 	 * Backs up a resource.
 	 *
 	 * @param resource The resource to back up.
-	 * @param content THe content of the resource.
+	 * @param content The content of the resource.
+	 * @param versionId The version id of the resource to backup.
 	 */
-	backupResource(resource: Uri, content: string): TPromise<void>;
+	backupResource(resource: Uri, content: string, versionId?: number): TPromise<void>;
 
 	/**
 	 * Discards the backup associated with a resource if it exists..

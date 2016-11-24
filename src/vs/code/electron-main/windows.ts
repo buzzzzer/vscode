@@ -91,7 +91,7 @@ export interface IWindowsMainService {
 	// events
 	onWindowReady: CommonEvent<VSCodeWindow>;
 	onWindowClose: CommonEvent<number>;
-	onPathOpen: CommonEvent<IPath>;
+	onPathsOpen: CommonEvent<IPath[]>;
 	onRecentPathsChange: CommonEvent<void>;
 
 	// methods
@@ -119,6 +119,7 @@ export interface IWindowsMainService {
 	removeFromRecentPathsList(paths: string[]): void;
 	clearRecentPathsList(): void;
 	toggleMenuBar(windowId: number): void;
+	quit(): void;
 }
 
 export class WindowsManager implements IWindowsMainService {
@@ -145,8 +146,8 @@ export class WindowsManager implements IWindowsMainService {
 	private _onWindowClose = new Emitter<number>();
 	onWindowClose: CommonEvent<number> = this._onWindowClose.event;
 
-	private _onPathOpen = new Emitter<IPath>();
-	onPathOpen: CommonEvent<IPath> = this._onPathOpen.event;
+	private _onPathsOpen = new Emitter<IPath[]>();
+	onPathsOpen: CommonEvent<IPath> = this._onPathsOpen.event;
 
 	constructor(
 		@IInstantiationService private instantiationService: IInstantiationService,
@@ -350,7 +351,6 @@ export class WindowsManager implements IWindowsMainService {
 			filesToOpen = candidates;
 		}
 
-		let configuration: IWindowConfiguration;
 		let openInNewWindow = openConfig.preferNewWindow || openConfig.forceNewWindow;
 
 		// Restore any existing backup workspaces on the first initial startup, provided an
@@ -363,9 +363,7 @@ export class WindowsManager implements IWindowsMainService {
 					return;
 				}
 
-				const untitledToRestore = this.backupService.getWorkspaceUntitledFileBackupsSync(Uri.file(workspacePath)).map(filePath => { return { filePath }; });
-				configuration = this.toConfiguration(openConfig, workspacePath, [], [], [], untitledToRestore);
-
+				const configuration = this.toConfiguration(openConfig, workspacePath);
 				const browserWindow = this.openInBrowserWindow(configuration, true /* new window */);
 				usedWindows.push(browserWindow);
 
@@ -403,7 +401,7 @@ export class WindowsManager implements IWindowsMainService {
 
 			// Otherwise open instance with files
 			else {
-				configuration = this.toConfiguration(openConfig, null, filesToOpen, filesToCreate, filesToDiff);
+				const configuration = this.toConfiguration(openConfig, null, filesToOpen, filesToCreate, filesToDiff);
 				const browserWindow = this.openInBrowserWindow(configuration, true /* new window */);
 				usedWindows.push(browserWindow);
 
@@ -439,7 +437,7 @@ export class WindowsManager implements IWindowsMainService {
 					return; // ignore folders that are already open
 				}
 
-				configuration = this.toConfiguration(openConfig, folderToOpen.workspacePath, filesToOpen, filesToCreate, filesToDiff);
+				const configuration = this.toConfiguration(openConfig, folderToOpen.workspacePath, filesToOpen, filesToCreate, filesToDiff);
 				const browserWindow = this.openInBrowserWindow(configuration, openInNewWindow, openInNewWindow ? void 0 : openConfig.windowToUse);
 				usedWindows.push(browserWindow);
 
@@ -486,7 +484,7 @@ export class WindowsManager implements IWindowsMainService {
 		}
 
 		// Emit events
-		iPathsToOpen.forEach(iPath => this._onPathOpen.fire(iPath));
+		this._onPathsOpen.fire(iPathsToOpen);
 
 		return arrays.distinct(usedWindows);
 	}
@@ -626,7 +624,7 @@ export class WindowsManager implements IWindowsMainService {
 		this.open({ cli: openConfig.cli, forceNewWindow: true, forceEmpty: openConfig.cli._.length === 0 });
 	}
 
-	private toConfiguration(config: IOpenConfiguration, workspacePath?: string, filesToOpen?: IPath[], filesToCreate?: IPath[], filesToDiff?: IPath[], untitledToRestore?: IPath[]): IWindowConfiguration {
+	private toConfiguration(config: IOpenConfiguration, workspacePath?: string, filesToOpen?: IPath[], filesToCreate?: IPath[], filesToDiff?: IPath[]): IWindowConfiguration {
 		const configuration: IWindowConfiguration = mixin({}, config.cli); // inherit all properties from CLI
 		configuration.appRoot = this.environmentService.appRoot;
 		configuration.execPath = process.execPath;
@@ -636,7 +634,6 @@ export class WindowsManager implements IWindowsMainService {
 		configuration.filesToOpen = filesToOpen;
 		configuration.filesToCreate = filesToCreate;
 		configuration.filesToDiff = filesToDiff;
-		configuration.untitledToRestore = untitledToRestore;
 
 		return configuration;
 	}
@@ -1221,6 +1218,23 @@ export class WindowsManager implements IWindowsMainService {
 			app.setJumpList(jumpList);
 		} catch (error) {
 			this.logService.log('#setJumpList', error); // since setJumpList is relatively new API, make sure to guard for errors
+		}
+	}
+
+	public quit(): void {
+
+		// If the user selected to exit from an extension development host window, do not quit, but just
+		// close the window unless this is the last window that is opened.
+		const vscodeWindow = this.getFocusedWindow();
+		if (vscodeWindow && vscodeWindow.isPluginDevelopmentHost && this.getWindowCount() > 1) {
+			vscodeWindow.win.close();
+		}
+
+		// Otherwise: normal quit
+		else {
+			setTimeout(() => {
+				app.quit();
+			}, 10 /* delay to unwind callback stack (IPC) */);
 		}
 	}
 }

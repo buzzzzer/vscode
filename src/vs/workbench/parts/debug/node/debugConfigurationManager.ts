@@ -45,19 +45,6 @@ export const debuggersExtPoint = extensionsRegistry.ExtensionsRegistry.registerE
 				description: nls.localize('vscode.extension.contributes.debuggers.label', "Display name for this debug adapter."),
 				type: 'string'
 			},
-			enableBreakpointsFor: {
-				description: nls.localize('vscode.extension.contributes.debuggers.enableBreakpointsFor', "Allow breakpoints for these languages."),
-				type: 'object',
-				properties: {
-					languageIds: {
-						description: nls.localize('vscode.extension.contributes.debuggers.enableBreakpointsFor.languageIds', "List of languages."),
-						type: 'array',
-						items: {
-							type: 'string'
-						}
-					}
-				}
-			},
 			program: {
 				description: nls.localize('vscode.extension.contributes.debuggers.program', "Path to the debug adapter program. Path is either absolute or relative to the extension folder."),
 				type: 'string'
@@ -81,6 +68,10 @@ export const debuggersExtPoint = extensionsRegistry.ExtensionsRegistry.registerE
 			initialConfigurations: {
 				description: nls.localize('vscode.extension.contributes.debuggers.initialConfigurations', "Configurations for generating the initial \'launch.json\'."),
 				type: ['array', 'string'],
+			},
+			configurationSnippets: {
+				description: nls.localize('vscode.extension.contributes.debuggers.configurationSnippets', "Snippets for adding new configurations in \'launch.json\'."),
+				type: 'object'
 			},
 			configurationAttributes: {
 				description: nls.localize('vscode.extension.contributes.debuggers.configurationAttributes', "JSON schema configurations for validating \'launch.json\'."),
@@ -155,6 +146,7 @@ const schema: IJSONSchema = {
 			type: 'array',
 			description: nls.localize('app.launch.json.configurations', "List of configurations. Add new configurations or edit existing ones by using IntelliSense."),
 			items: {
+				defaultSnippets: [],
 				'type': 'object',
 				oneOf: []
 			}
@@ -211,12 +203,16 @@ export class ConfigurationManager implements debug.IConfigurationManager {
 				});
 			});
 
-			// update the schema to include all attributes and types from extensions.
-			// debug.schema.properties['configurations'].items.properties.type.enum = this.adapters.map(adapter => adapter.type);
+			// update the schema to include all attributes, snippets and types from extensions.
 			this.adapters.forEach(adapter => {
+				const items = (<IJSONSchema>schema.properties['configurations'].items);
 				const schemaAttributes = adapter.getSchemaAttributes();
 				if (schemaAttributes) {
-					(<IJSONSchema>schema.properties['configurations'].items).oneOf.push(...schemaAttributes);
+					items.oneOf.push(...schemaAttributes);
+				}
+				const configurationSnippets = adapter.configurationSnippets;
+				if (configurationSnippets) {
+					items.defaultSnippets.push(...configurationSnippets);
 				}
 			});
 		});
@@ -256,21 +252,16 @@ export class ConfigurationManager implements debug.IConfigurationManager {
 
 		if (result) {
 			// Set operating system specific properties #1873
-			if (isWindows && result.windows) {
-				Object.keys(result.windows).forEach(key => {
-					result[key] = result.windows[key];
-				});
-			}
-			if (isMacintosh && result.osx) {
-				Object.keys(result.osx).forEach(key => {
-					result[key] = result.osx[key];
-				});
-			}
-			if (isLinux && result.linux) {
-				Object.keys(result.linux).forEach(key => {
-					result[key] = result.linux[key];
-				});
-			}
+			const setOSProperties = (flag: boolean, osConfig: debug.IEnvConfig) => {
+				if (flag && osConfig) {
+					Object.keys(osConfig).forEach(key => {
+						result[key] = osConfig[key];
+					});
+				}
+			};
+			setOSProperties(isWindows, result.windows);
+			setOSProperties(isMacintosh, result.osx);
+			setOSProperties(isLinux, result.linux);
 
 			// massage configuration attributes - append workspace path to relatvie paths, substitute variables in paths.
 			Object.keys(result).forEach(key => {
@@ -289,7 +280,7 @@ export class ConfigurationManager implements debug.IConfigurationManager {
 
 		return this.fileService.resolveContent(resource).then(content => true, err =>
 			this.quickOpenService.pick(this.adapters, { placeHolder: nls.localize('selectDebug', "Select Environment") })
-				.then(adapter => adapter ? adapter.getInitialConfigFileContent() : null)
+				.then(adapter => adapter ? adapter.getInitialConfigurationContent() : null)
 				.then(content => {
 					if (!content) {
 						return false;

@@ -563,6 +563,31 @@ export class SnippetString {
 
 		return this;
 	}
+
+	appendVariable(name: string, defaultValue?: string | ((snippet: SnippetString) => any)): SnippetString {
+
+		if (typeof defaultValue === 'function') {
+			const nested = new SnippetString();
+			nested._tabstop = this._tabstop;
+			defaultValue(nested);
+			this._tabstop = nested._tabstop;
+			defaultValue = nested.value;
+
+		} else if (typeof defaultValue === 'string') {
+			defaultValue = defaultValue.replace(/\$|}/g, '\\$&');
+		}
+
+		this.value += '${';
+		this.value += name;
+		if (defaultValue) {
+			this.value += ':';
+			this.value += defaultValue;
+		}
+		this.value += '}';
+
+
+		return this;
+	}
 }
 
 export enum DiagnosticSeverity {
@@ -756,7 +781,7 @@ export class CodeLens {
 export class ParameterInformation {
 
 	label: string;
-	documentation: string;
+	documentation?: string;
 
 	constructor(label: string, documentation?: string) {
 		this.label = label;
@@ -767,7 +792,7 @@ export class ParameterInformation {
 export class SignatureInformation {
 
 	label: string;
-	documentation: string;
+	documentation?: string;
 	parameters: ParameterInformation[];
 
 	constructor(label: string, documentation?: string) {
@@ -844,7 +869,7 @@ export class CompletionItem {
 
 export class CompletionList {
 
-	isIncomplete: boolean;
+	isIncomplete?: boolean;
 
 	items: vscode.CompletionItem[];
 
