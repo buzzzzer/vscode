@@ -17,11 +17,10 @@ import { IBackupMainService } from 'vs/platform/backup/common/backup';
 import { trim } from 'vs/base/common/strings';
 import { IEnvironmentService, ParsedArgs } from 'vs/platform/environment/common/environment';
 import { IStorageService } from 'vs/code/electron-main/storage';
-import { IPath, VSCodeWindow, IWindowConfiguration, IWindowState as ISingleWindowState, defaultWindowState } from 'vs/code/electron-main/window';
-import { ReadyState } from 'vs/code/common/window';
+import { IPath, VSCodeWindow, IWindowConfiguration, IWindowState as ISingleWindowState, defaultWindowState, ReadyState } from 'vs/code/electron-main/window';
 import { ipcMain as ipc, app, screen, BrowserWindow, dialog } from 'electron';
 import { IPathWithLineAndColumn, parseLineAndColumnAware } from 'vs/code/electron-main/paths';
-import { ILifecycleMainService } from 'vs/platform/lifecycle/common/mainLifecycle';
+import { ILifecycleService } from 'vs/code/electron-main/lifecycle';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/code/electron-main/log';
 import { getPathLabel } from 'vs/base/common/labels';
@@ -75,6 +74,7 @@ interface INativeOpenDialogOptions {
 	pickFiles?: boolean;
 	path?: string;
 	forceNewWindow?: boolean;
+	window?: VSCodeWindow;
 }
 
 const ReopenFoldersSetting = {
@@ -100,8 +100,8 @@ export interface IWindowsMainService {
 	open(openConfig: IOpenConfiguration): VSCodeWindow[];
 	openPluginDevelopmentHostWindow(openConfig: IOpenConfiguration): void;
 	openFileFolderPicker(forceNewWindow?: boolean): void;
-	openFilePicker(forceNewWindow?: boolean, path?: string): void;
-	openFolderPicker(forceNewWindow?: boolean): void;
+	openFilePicker(forceNewWindow?: boolean, path?: string, window?: VSCodeWindow): void;
+	openFolderPicker(forceNewWindow?: boolean, window?: VSCodeWindow): void;
 	openAccessibilityOptions(): void;
 	focusLastActive(cli: ParsedArgs): VSCodeWindow;
 	getLastActiveWindow(): VSCodeWindow;
@@ -154,7 +154,7 @@ export class WindowsManager implements IWindowsMainService {
 		@ILogService private logService: ILogService,
 		@IStorageService private storageService: IStorageService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
-		@ILifecycleMainService private lifecycleService: ILifecycleMainService,
+		@ILifecycleService private lifecycleService: ILifecycleService,
 		@IBackupMainService private backupService: IBackupMainService,
 		@IConfigurationService private configurationService: IConfigurationService,
 		@ITelemetryService private telemetryService: ITelemetryService
@@ -358,11 +358,6 @@ export class WindowsManager implements IWindowsMainService {
 		if (openConfig.initialStartup && !openConfig.cli.extensionDevelopmentPath) {
 			const workspacesWithBackups = this.backupService.getWorkspaceBackupPaths();
 			workspacesWithBackups.forEach(workspacePath => {
-				if (!fs.existsSync(workspacePath)) {
-					this.backupService.removeWorkspaceBackupPathSync(Uri.file(workspacePath));
-					return;
-				}
-
 				const configuration = this.toConfiguration(openConfig, workspacePath);
 				const browserWindow = this.openInBrowserWindow(configuration, true /* new window */);
 				usedWindows.push(browserWindow);
@@ -862,12 +857,12 @@ export class WindowsManager implements IWindowsMainService {
 		this.doPickAndOpen({ pickFolders: true, pickFiles: true, forceNewWindow });
 	}
 
-	public openFilePicker(forceNewWindow?: boolean, path?: string): void {
-		this.doPickAndOpen({ pickFiles: true, forceNewWindow, path });
+	public openFilePicker(forceNewWindow?: boolean, path?: string, window?: VSCodeWindow): void {
+		this.doPickAndOpen({ pickFiles: true, forceNewWindow, path, window });
 	}
 
-	public openFolderPicker(forceNewWindow?: boolean): void {
-		this.doPickAndOpen({ pickFolders: true, forceNewWindow });
+	public openFolderPicker(forceNewWindow?: boolean, window?: VSCodeWindow): void {
+		this.doPickAndOpen({ pickFolders: true, forceNewWindow, window });
 	}
 
 	public openAccessibilityOptions(): void {
@@ -896,7 +891,7 @@ export class WindowsManager implements IWindowsMainService {
 
 	private getFileOrFolderPaths(options: INativeOpenDialogOptions, clb: (paths: string[]) => void): void {
 		const workingDir = options.path || this.storageService.getItem<string>(WindowsManager.workingDirPickerStorageKey);
-		const focussedWindow = this.getFocusedWindow();
+		const focussedWindow = options.window || this.getFocusedWindow();
 
 		let pickerProperties: ('openFile' | 'openDirectory' | 'multiSelections' | 'createDirectory')[];
 		if (options.pickFiles && options.pickFolders) {
